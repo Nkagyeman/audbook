@@ -4,7 +4,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { db } from '@/lib/db';
 import { Book } from '@/lib/types';
-import { seedSampleBooksIfEmpty, restoreSampleBooks } from '@/lib/sampleData';
+import { seedSampleBooksIfEmpty, restoreSampleBooks, getDeletedBookIds, markBookAsDeleted } from '@/lib/sampleData';
 import BookCard from '@/components/BookCard';
 import UploaderModal from '@/components/UploaderModal';
 import SettingsModal from '@/components/SettingsModal';
@@ -21,6 +21,7 @@ import {
   CheckCircle2,
   BookmarkCheck,
   FileText,
+  Trash2,
 } from 'lucide-react';
 import { useReader } from '@/context/ReaderContext';
 
@@ -38,10 +39,12 @@ export default function LibraryPage() {
   const loadAllBooks = async () => {
     setIsLoading(true);
     await seedSampleBooksIfEmpty();
+    const deletedIds = getDeletedBookIds();
     const all = await db.books.orderBy('lastReadAt').reverse().toArray();
+    const nonDeleted = all.filter((b) => !deletedIds.includes(b.id));
 
     // Merge recent progress from localStorage
-    const merged = all.map((b) => {
+    const merged = nonDeleted.map((b) => {
       try {
         const localProgRaw = localStorage.getItem(`audbook_prog_${b.id}`);
         if (localProgRaw) {
@@ -71,6 +74,7 @@ export default function LibraryPage() {
 
   const handleDeleteBook = async (bookId: string) => {
     if (confirm('Are you sure you want to remove this book from your library?')) {
+      markBookAsDeleted(bookId);
       await db.books.delete(bookId);
       await db.chapters.where('bookId').equals(bookId).delete();
       await db.bookmarks.where('bookId').equals(bookId).delete();
@@ -78,8 +82,27 @@ export default function LibraryPage() {
       await db.audioCache.where('bookId').equals(bookId).delete();
       try {
         localStorage.removeItem(`audbook_prog_${bookId}`);
+        localStorage.removeItem(`audbook_scroll_${bookId}`);
       } catch (e) {}
       setBooks((prev) => prev.filter((b) => b.id !== bookId));
+    }
+  };
+
+  const handleClearAllBooks = async () => {
+    if (confirm('Are you sure you want to delete ALL books in your library?')) {
+      for (const b of books) {
+        markBookAsDeleted(b.id);
+        try {
+          localStorage.removeItem(`audbook_prog_${b.id}`);
+          localStorage.removeItem(`audbook_scroll_${b.id}`);
+        } catch (e) {}
+      }
+      await db.books.clear();
+      await db.chapters.clear();
+      await db.bookmarks.clear();
+      await db.highlights.clear();
+      await db.audioCache.clear();
+      setBooks([]);
     }
   };
 

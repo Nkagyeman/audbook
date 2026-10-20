@@ -28,65 +28,127 @@ export default function ReaderContent() {
   const [resumedToast, setResumedToast] = useState<number | null>(null);
   const hasRestoredScrollRef = useRef(false);
 
-  // Auto-scroll to saved position when chapter loads
+  // Reset scroll restoration flag when book or chapter changes
   useEffect(() => {
+    hasRestoredScrollRef.current = false;
+  }, [activeBook?.id, currentChapterIndex]);
+
+  // Auto-scroll to saved position when opening book or chapter loads
+  useEffect(() => {
+    if (!activeBook || !chapterTokens || chapterTokens.paragraphs.length === 0) return;
     if (hasRestoredScrollRef.current) return;
-    if (chapterTokens && chapterTokens.paragraphs.length > 0 && currentParagraphIndex > 0) {
-      hasRestoredScrollRef.current = true;
-      const targetPIdx = currentParagraphIndex;
-      const timer = setTimeout(() => {
-        const el = document.querySelector(`[data-p-idx="${targetPIdx}"]`);
-        if (el) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          setResumedToast(targetPIdx + 1);
-          setTimeout(() => setResumedToast(null), 4000);
-        }
-      }, 350);
-      return () => clearTimeout(timer);
-    }
-  }, [chapterTokens, currentParagraphIndex]);
 
-  // Track scroll position when user reads silently (not playing audio)
-  useEffect(() => {
-    if (isPlaying) return;
+    let targetPIdx = currentParagraphIndex;
+    let targetScrollY: number | null = null;
 
-    const elements = document.querySelectorAll('[data-p-idx]');
-    if (!elements.length) return;
-
-    let debounceTimer: NodeJS.Timeout;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting && entry.intersectionRatio >= 0.4) {
-            const attr = entry.target.getAttribute('data-p-idx');
-            if (attr !== null) {
-              const pIdx = parseInt(attr, 10);
-              if (!isNaN(pIdx) && pIdx !== currentParagraphIndex) {
-                clearTimeout(debounceTimer);
-                debounceTimer = setTimeout(() => {
-                  setCurrentParagraphIndex(pIdx);
-                  persistProgress(currentChapterIndex, pIdx, 0, 0);
-                }, 500);
-              }
-            }
+    try {
+      const savedScrollRaw = localStorage.getItem(`audbook_scroll_${activeBook.id}`);
+      if (savedScrollRaw) {
+        const savedScroll = JSON.parse(savedScrollRaw);
+        if (savedScroll.chapterIndex === currentChapterIndex) {
+          if (typeof savedScroll.scrollY === 'number' && savedScroll.scrollY > 0) {
+            targetScrollY = savedScroll.scrollY;
+          }
+          if (typeof savedScroll.paragraphIndex === 'number' && savedScroll.paragraphIndex > 0) {
+            targetPIdx = savedScroll.paragraphIndex;
           }
         }
-      },
-      {
-        root: null,
-        rootMargin: '-20% 0px -40% 0px',
-        threshold: 0.4,
       }
-    );
+    } catch (e) {}
 
-    elements.forEach((el) => observer.observe(el));
+    if (targetPIdx <= 0 && (!targetScrollY || targetScrollY <= 20)) {
+      hasRestoredScrollRef.current = true;
+      return;
+    }
 
-    return () => {
-      clearTimeout(debounceTimer);
-      observer.disconnect();
+    hasRestoredScrollRef.current = true;
+
+    // Retry restoration smoothly up to 5 times to accommodate layout reflows and fonts
+    let attempts = 0;
+    const restoreTimer = setInterval(() => {
+      attempts++;
+      const el = document.querySelector(`[data-p-idx="${targetPIdx}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setResumedToast(targetPIdx + 1);
+        setTimeout(() => setResumedToast(null), 4000);
+        clearInterval(restoreTimer);
+      } else if (targetScrollY !== null && targetScrollY > 0) {
+        window.scrollTo({ top: targetScrollY, behavior: 'instant' });
+        clearInterval(restoreTimer);
+      }
+
+      if (attempts >= 5) {
+        clearInterval(restoreTimer);
+      }
+    }, 120);
+
+    return () => clearInterval(restoreTimer);
+  }, [activeBook?.id, chapterTokens, currentChapterIndex, currentParagraphIndex]);
+
+  // High-precision scroll tracking for silent reading (instant persistence to localStorage & Dexie)
+  useEffect(() => {
+    if (isPlaying) return;
+    if (!activeBook) return;
+
+    let ticking = false;
+    let debounceTimer: NodeJS.Timeout;
+
+    const handleScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          ticking = false;
+          const targetY = window.innerHeight * 0.35;
+          const paragraphs = document.querySelectorAll<HTMLElement>('[data-p-idx]');
+          if (!paragraphs.length) return;
+
+          let bestPIdx = currentParagraphIndex;
+          for (let i = 0; i < paragraphs.length; i++) {
+            const rect = paragraphs[i].getBoundingClientRect();
+            if (rect.top <= targetY && rect.bottom >= targetY) {
+              const idxAttr = paragraphs[i].getAttribute('data-p-idx');
+              if (idxAttr !== null) {
+                bestPIdx = parseInt(idxAttr, 10);
+                break;
+              }
+            } else if (rect.top > targetY) {
+              if (i > 0) {
+                const prevAttr = paragraphs[i - 1].getAttribute('data-p-idx');
+                if (prevAttr !== null) bestPIdx = parseInt(prevAttr, 10);
+              }
+              break;
+            }
+          }
+
+          if (bestPIdx !== currentParagraphIndex) {
+            setCurrentParagraphIndex(bestPIdx);
+          }
+
+          clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            const scrollData = {
+              scrollY: window.scrollY,
+              chapterIndex: currentChapterIndex,
+              paragraphIndex: bestPIdx,
+              timestamp: Date.now(),
+            };
+            try {
+              localStorage.setItem(`audbook_scroll_${activeBook.id}`, JSON.stringify(scrollData));
+            } catch (e) {}
+
+            persistProgress(currentChapterIndex, bestPIdx, 0, 0);
+          }, 250);
+        });
+        ticking = true;
+      }
     };
-  }, [isPlaying, chapterTokens, currentChapterIndex, currentParagraphIndex, persistProgress, setCurrentParagraphIndex]);
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      clearTimeout(debounceTimer);
+    };
+  }, [isPlaying, activeBook?.id, currentChapterIndex, currentParagraphIndex, persistProgress, setCurrentParagraphIndex]);
 
   if (!currentChapter || !activeBook) {
     return (

@@ -182,25 +182,76 @@ And, after boasting this way of my tolerance, I come to the admission that it ha
   },
 ];
 
+export const DELETED_BOOKS_KEY = 'audbook_deleted_book_ids';
+export const USER_INITIALIZED_KEY = 'audbook_user_initialized';
+
+export function getDeletedBookIds(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(DELETED_BOOKS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function markBookAsDeleted(bookId: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const list = getDeletedBookIds();
+    if (!list.includes(bookId)) {
+      list.push(bookId);
+      localStorage.setItem(DELETED_BOOKS_KEY, JSON.stringify(list));
+    }
+    localStorage.setItem(USER_INITIALIZED_KEY, 'true');
+    localStorage.setItem('audbook_has_seeded_samples', 'true');
+  } catch (e) {
+    console.warn('Failed to mark book as deleted:', e);
+  }
+}
+
+export function clearDeletedBookIds(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(DELETED_BOOKS_KEY);
+  } catch (e) {}
+}
+
 export async function seedSampleBooksIfEmpty(force: boolean = false): Promise<void> {
   try {
     if (typeof window !== 'undefined') {
-      const alreadyInitialized = localStorage.getItem('audbook_has_seeded_samples');
-      // If user has already visited and deleted books, do not resurrect them unless explicitly forced
-      if (!force && alreadyInitialized === 'true') {
+      const isInitialized =
+        localStorage.getItem(USER_INITIALIZED_KEY) === 'true' ||
+        localStorage.getItem('audbook_has_seeded_samples') === 'true';
+
+      // If user has already visited/initialized, NEVER resurrect on reload unless user clicks Restore
+      if (!force && isInitialized) {
         return;
       }
     }
 
     const count = await db.books.count();
+    const deletedIds = getDeletedBookIds();
+
     if (count === 0 || force) {
       for (const item of SAMPLE_BOOKS) {
+        // If not forced, never re-seed books the user explicitly deleted
+        if (!force && deletedIds.includes(item.book.id)) {
+          continue;
+        }
         await db.books.put(item.book);
         for (const ch of item.chapters) {
           await db.chapters.put(ch);
         }
       }
       if (typeof window !== 'undefined') {
+        localStorage.setItem(USER_INITIALIZED_KEY, 'true');
+        localStorage.setItem('audbook_has_seeded_samples', 'true');
+      }
+    } else {
+      // Books already exist in DB, mark initialized so future deletions are permanent
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(USER_INITIALIZED_KEY, 'true');
         localStorage.setItem('audbook_has_seeded_samples', 'true');
       }
     }
@@ -210,5 +261,7 @@ export async function seedSampleBooksIfEmpty(force: boolean = false): Promise<vo
 }
 
 export async function restoreSampleBooks(): Promise<void> {
+  clearDeletedBookIds();
   return seedSampleBooksIfEmpty(true);
 }
+

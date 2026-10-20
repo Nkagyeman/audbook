@@ -176,13 +176,22 @@ export function ReaderProvider({ children }: { children: React.ReactNode }) {
       const targetChapters = chaptersRef.current;
       if (!targetBook || !targetChapters.length) return;
 
-      const totalChapters = targetChapters.length;
+      const totalChapters = targetChapters.length || 1;
       const chapterWeight = 100 / totalChapters;
       const tokens = chapterTokensRef.current;
-      const chapterProg = tokens?.words?.length
-        ? (wIdx / tokens.words.length) * chapterWeight
-        : 0;
-      const progressPercent = Math.min(100, Math.round(chIdx * chapterWeight + chapterProg));
+
+      let intraFraction = 0;
+      if (tokens?.words?.length && wIdx > 0) {
+        intraFraction = wIdx / tokens.words.length;
+      } else if (tokens?.paragraphs?.length && pIdx > 0) {
+        intraFraction = pIdx / tokens.paragraphs.length;
+      }
+
+      const rawPercent = (chIdx + intraFraction) * chapterWeight;
+      const progressPercent = Math.min(
+        100,
+        Math.max(pIdx > 0 || chIdx > 0 || wIdx > 0 ? 1 : 0, Math.round(rawPercent))
+      );
 
       const updatePayload = {
         currentChapterIndex: chIdx,
@@ -223,11 +232,32 @@ export function ReaderProvider({ children }: { children: React.ReactNode }) {
       const pIdx = currentParagraphIndexRef.current;
       const wIdx = currentWordIndexRef.current;
       const charOffset = lastCharIndexRef.current;
+
+      // CRITICAL GUARD: Never wipe out existing non-zero progress with 0 on unmount/exit
+      try {
+        const existingRaw = localStorage.getItem(`audbook_prog_${book.id}`);
+        if (existingRaw) {
+          const existing = JSON.parse(existingRaw);
+          if (chIdx === 0 && pIdx === 0 && (existing.currentParagraphIndex > 0 || existing.currentChapterIndex > 0)) {
+            return;
+          }
+        }
+      } catch (e) {}
+
       const totalChapters = chaptersRef.current.length || 1;
       const chapterWeight = 100 / totalChapters;
       const tokens = chapterTokensRef.current;
-      const chapterProg = tokens?.words?.length ? (wIdx / tokens.words.length) * chapterWeight : 0;
-      const progressPercent = Math.min(100, Math.round(chIdx * chapterWeight + chapterProg));
+      let intraFraction = 0;
+      if (tokens?.words?.length && wIdx > 0) {
+        intraFraction = wIdx / tokens.words.length;
+      } else if (tokens?.paragraphs?.length && pIdx > 0) {
+        intraFraction = pIdx / tokens.paragraphs.length;
+      }
+      const rawPercent = (chIdx + intraFraction) * chapterWeight;
+      const progressPercent = Math.min(
+        100,
+        Math.max(pIdx > 0 || chIdx > 0 || wIdx > 0 ? 1 : 0, Math.round(rawPercent))
+      );
 
       const payload = {
         currentChapterIndex: chIdx,
@@ -285,6 +315,20 @@ export function ReaderProvider({ children }: { children: React.ReactNode }) {
       } catch (e) {
         console.warn('Error reading progress from localStorage:', e);
       }
+
+      // Check if localStorage has recent scroll state
+      try {
+        const localScrollRaw = localStorage.getItem(`audbook_scroll_${bookId}`);
+        if (localScrollRaw) {
+          const localScroll = JSON.parse(localScrollRaw);
+          if (typeof localScroll.chapterIndex === 'number') {
+            book.currentChapterIndex = localScroll.chapterIndex;
+          }
+          if (typeof localScroll.paragraphIndex === 'number' && localScroll.paragraphIndex > 0) {
+            book.currentParagraphIndex = localScroll.paragraphIndex;
+          }
+        }
+      } catch (e) {}
 
       const bookChapters = await db.chapters.where('bookId').equals(bookId).sortBy('order');
       if (bookChapters.length === 0) return false;
@@ -535,6 +579,20 @@ export function ReaderProvider({ children }: { children: React.ReactNode }) {
       setCurrentWordIndex(targetWordIndex);
       setActiveWord(null);
       setActiveSentence(null);
+
+      if (activeBookRef.current) {
+        try {
+          localStorage.setItem(
+            `audbook_scroll_${activeBookRef.current.id}`,
+            JSON.stringify({
+              scrollY: 0,
+              chapterIndex: order,
+              paragraphIndex: targetParagraphIndex,
+              timestamp: Date.now(),
+            })
+          );
+        } catch (e) {}
+      }
 
       persistProgress(order, targetParagraphIndex, targetWordIndex, 0);
     },
