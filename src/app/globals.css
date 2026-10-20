@@ -1,26 +1,168 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,500;0,7..72,600;0,7..72,700;1,7..72,400;1,7..72,600&family=Merriweather:ital,wght@0,300;0,400;0,700;1,300;1,400&display=swap');
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg-canvas: #F8FAFC;
+  --bg-surface: #FFFFFF;
+  --bg-elevated: #F1F5F9;
+  --text-ink: #0A2540;
+  --text-secondary: #475569;
+  --text-muted: #94A3B8;
+  --border-hairline: rgba(15, 23, 42, 0.08);
+  --border-strong: rgba(15, 23, 42, 0.16);
+  --accent-primary: #2563EB;
+  --accent-highlight: #FEF08A; /* Soft subtle yellow */
+  --accent-word: #3B82F6;
+  --card-shadow: 0 1px 2px -1px rgba(15, 23, 42, 0.08), 0 4px 12px -2px rgba(15, 23, 42, 0.06), 0 16px 32px -4px rgba(15, 23, 42, 0.04);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+[data-theme="sepia"] {
+  --bg-canvas: #F4ECD8;
+  --bg-surface: #FBF0D9;
+  --bg-elevated: #ECE2C8;
+  --text-ink: #3A2E24;
+  --text-secondary: #6B5542;
+  --text-muted: #998370;
+  --border-hairline: rgba(58, 46, 36, 0.12);
+  --border-strong: rgba(58, 46, 36, 0.22);
+  --accent-primary: #854D0E;
+  --accent-highlight: #FDE047;
+  --accent-word: #B45309;
+  --card-shadow: 0 1px 2px -1px rgba(58, 46, 36, 0.10), 0 4px 12px -2px rgba(58, 46, 36, 0.08);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+[data-theme="cream"] {
+  --bg-canvas: #F5F2EB;
+  --bg-surface: #FAF8F5;
+  --bg-elevated: #ECE7DE;
+  --text-ink: #23211F;
+  --text-secondary: #5A544F;
+  --text-muted: #8E877F;
+  --border-hairline: rgba(35, 33, 31, 0.09);
+  --border-strong: rgba(35, 33, 31, 0.18);
+  --accent-primary: #44403C;
+  --accent-highlight: #FEF3C7;
+  --accent-word: #57534E;
+  --card-shadow: 0 1px 2px -1px rgba(35, 33, 31, 0.08), 0 4px 12px -2px rgba(35, 33, 31, 0.05);
 }
 
+[data-theme="dark"] {
+  --bg-canvas: #090A0D;
+  --bg-surface: #12141A;
+  --bg-elevated: #1A1D24;
+  --text-ink: #E2E8F0;
+  --text-secondary: #94A3B8;
+  --text-muted: #64748B;
+  --border-hairline: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.15);
+  --accent-primary: #38BDF8;
+  --accent-highlight: rgba(56, 189, 248, 0.18);
+  --accent-word: #60A5FA;
+  --card-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5), 0 0 1px 1px rgba(255, 255, 255, 0.05);
+}
+
+[data-theme="amoled"] {
+  --bg-canvas: #000000;
+  --bg-surface: #080808;
+  --bg-elevated: #121212;
+  --text-ink: #D4D4D8;
+  --text-secondary: #71717A;
+  --text-muted: #52525B;
+  --border-hairline: rgba(255, 255, 255, 0.12);
+  --border-strong: rgba(255, 255, 255, 0.22);
+  --accent-primary: #E4E4E7;
+  --accent-highlight: rgba(255, 255, 255, 0.14);
+  --accent-word: #FAFAFA;
+  --card-shadow: 0 0 1px 1px rgba(255, 255, 255, 0.08);
+}
+
+/* Typography font classes */
+.font-literata {
+  font-family: 'Literata', Georgia, serif;
+}
+
+.font-merriweather {
+  font-family: 'Merriweather', Charter, Georgia, serif;
+}
+
+.font-inter {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.font-opendyslexic {
+  font-family: 'OpenDyslexic', 'Comic Sans MS', sans-serif;
+}
+
+/* Base Body Styling */
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--bg-canvas);
+  color: var(--text-ink);
+  transition: background-color 0.2s ease, color 0.2s ease;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+/* Tabular figures for numbers, timers, chapter stats */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" on;
+}
+
+/* Karaoké Read-Along Highlighting */
+.karaoke-sentence-active {
+  background-color: var(--accent-highlight);
+  border-radius: 4px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  transition: background-color 0.15s ease-out;
+}
+
+.karaoke-word-active {
+  background-color: var(--accent-word);
+  color: #FFFFFF !important;
+  border-radius: 3px;
+  padding: 1px 3px;
+  margin: -1px -3px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  font-weight: 500;
+  transition: all 0.1s ease-out;
+}
+
+/* User Text Selection & Annotations */
+.highlight-yellow {
+  background-color: rgba(254, 240, 138, 0.5);
+  border-bottom: 2px solid #EAB308;
+}
+
+.highlight-green {
+  background-color: rgba(187, 247, 208, 0.5);
+  border-bottom: 2px solid #22C55E;
+}
+
+.highlight-blue {
+  background-color: rgba(186, 230, 253, 0.5);
+  border-bottom: 2px solid #0284C7;
+}
+
+.highlight-purple {
+  background-color: rgba(243, 232, 255, 0.5);
+  border-bottom: 2px solid #A855F7;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
 }
