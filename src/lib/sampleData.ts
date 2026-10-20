@@ -182,18 +182,33 @@ And, after boasting this way of my tolerance, I come to the admission that it ha
   },
 ];
 
-export async function seedSampleBooksIfEmpty(): Promise<void> {
+export async function seedSampleBooksIfEmpty(force: boolean = false): Promise<void> {
   try {
+    if (typeof window !== 'undefined') {
+      const alreadyInitialized = localStorage.getItem('audbook_has_seeded_samples');
+      // If user has already visited and deleted books, do not resurrect them unless explicitly forced
+      if (!force && alreadyInitialized === 'true') {
+        return;
+      }
+    }
+
     const count = await db.books.count();
-    if (count === 0) {
+    if (count === 0 || force) {
       for (const item of SAMPLE_BOOKS) {
         await db.books.put(item.book);
         for (const ch of item.chapters) {
           await db.chapters.put(ch);
         }
       }
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('audbook_has_seeded_samples', 'true');
+      }
     }
   } catch (err) {
     console.error('Error seeding sample books:', err);
   }
+}
+
+export async function restoreSampleBooks(): Promise<void> {
+  return seedSampleBooksIfEmpty(true);
 }

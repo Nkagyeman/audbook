@@ -4,7 +4,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { db } from '@/lib/db';
 import { Book } from '@/lib/types';
-import { seedSampleBooksIfEmpty } from '@/lib/sampleData';
+import { seedSampleBooksIfEmpty, restoreSampleBooks } from '@/lib/sampleData';
 import BookCard from '@/components/BookCard';
 import UploaderModal from '@/components/UploaderModal';
 import SettingsModal from '@/components/SettingsModal';
@@ -76,6 +76,9 @@ export default function LibraryPage() {
       await db.bookmarks.where('bookId').equals(bookId).delete();
       await db.highlights.where('bookId').equals(bookId).delete();
       await db.audioCache.where('bookId').equals(bookId).delete();
+      try {
+        localStorage.removeItem(`audbook_prog_${bookId}`);
+      } catch (e) {}
       setBooks((prev) => prev.filter((b) => b.id !== bookId));
     }
   };
@@ -338,14 +341,27 @@ ${bookmarks.map((bm, i) => `- **${bm.chapterTitle}**: "${bm.snippet}"`).join('\n
                 ? `No books match "${searchQuery}". Try a different keyword.`
                 : 'Your library is empty. Import your first EPUB, PDF, or TXT file to get started.'}
             </p>
-            <button
-              type="button"
-              onClick={() => setIsUploaderOpen(true)}
-              className="mt-5 flex items-center gap-2 rounded-lg bg-[var(--text-ink)] px-4 py-2 text-xs font-semibold text-[var(--bg-surface)] shadow-xs hover:opacity-90"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Import Book Now</span>
-            </button>
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setIsUploaderOpen(true)}
+                className="flex items-center gap-2 rounded-lg bg-[var(--text-ink)] px-4 py-2 text-xs font-semibold text-[var(--bg-surface)] shadow-xs hover:opacity-90 transition-opacity"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Import Book Now</span>
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  await restoreSampleBooks();
+                  await loadAllBooks();
+                }}
+                className="flex items-center gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-elevated)] px-4 py-2 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-ink)] hover:bg-[var(--bg-surface)] transition-all"
+              >
+                <BookOpen className="h-3.5 w-3.5 text-blue-500" />
+                <span>Restore Sample Classics</span>
+              </button>
+            </div>
           </div>
         ) : viewMode === 'grid' ? (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
