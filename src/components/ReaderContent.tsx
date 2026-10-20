@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useRef, useState } from 'react';
 import { useReader } from '@/context/ReaderContext';
-import { ArrowRight, BookOpen, Clock } from 'lucide-react';
+import { ArrowRight, BookOpen, Clock, ArrowUp, Check } from 'lucide-react';
 import TextSelectionPopover from './TextSelectionPopover';
 
 export default function ReaderContent() {
@@ -19,7 +19,74 @@ export default function ReaderContent() {
     jumpToParagraph,
     nextChapter,
     highlights,
+    currentParagraphIndex,
+    setCurrentParagraphIndex,
+    persistProgress,
+    isPlaying,
   } = useReader();
+
+  const [resumedToast, setResumedToast] = useState<number | null>(null);
+  const hasRestoredScrollRef = useRef(false);
+
+  // Auto-scroll to saved position when chapter loads
+  useEffect(() => {
+    if (hasRestoredScrollRef.current) return;
+    if (chapterTokens && chapterTokens.paragraphs.length > 0 && currentParagraphIndex > 0) {
+      hasRestoredScrollRef.current = true;
+      const targetPIdx = currentParagraphIndex;
+      const timer = setTimeout(() => {
+        const el = document.querySelector(`[data-p-idx="${targetPIdx}"]`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          setResumedToast(targetPIdx + 1);
+          setTimeout(() => setResumedToast(null), 4000);
+        }
+      }, 350);
+      return () => clearTimeout(timer);
+    }
+  }, [chapterTokens, currentParagraphIndex]);
+
+  // Track scroll position when user reads silently (not playing audio)
+  useEffect(() => {
+    if (isPlaying) return;
+
+    const elements = document.querySelectorAll('[data-p-idx]');
+    if (!elements.length) return;
+
+    let debounceTimer: NodeJS.Timeout;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.4) {
+            const attr = entry.target.getAttribute('data-p-idx');
+            if (attr !== null) {
+              const pIdx = parseInt(attr, 10);
+              if (!isNaN(pIdx) && pIdx !== currentParagraphIndex) {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => {
+                  setCurrentParagraphIndex(pIdx);
+                  persistProgress(currentChapterIndex, pIdx, 0, 0);
+                }, 500);
+              }
+            }
+          }
+        }
+      },
+      {
+        root: null,
+        rootMargin: '-20% 0px -40% 0px',
+        threshold: 0.4,
+      }
+    );
+
+    elements.forEach((el) => observer.observe(el));
+
+    return () => {
+      clearTimeout(debounceTimer);
+      observer.disconnect();
+    };
+  }, [isPlaying, chapterTokens, currentChapterIndex, currentParagraphIndex, persistProgress, setCurrentParagraphIndex]);
 
   if (!currentChapter || !activeBook) {
     return (
@@ -63,6 +130,31 @@ export default function ReaderContent() {
       }}
     >
       <TextSelectionPopover />
+
+      {/* Discreet Resumed Position Notification */}
+      {resumedToast && (
+        <aside
+          aria-label="Reading Location Restored"
+          className="fixed top-14 left-1/2 z-40 -translate-x-1/2 flex items-center gap-2 rounded-full border border-[var(--border-hairline)] bg-[var(--bg-surface)] px-3.5 py-1.5 shadow-lg backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-300"
+        >
+          <Check className="h-3.5 w-3.5 text-emerald-500" />
+          <span className="text-xs text-[var(--text-ink)] font-medium">
+            Resumed at paragraph {resumedToast}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+              setCurrentParagraphIndex(0);
+              persistProgress(currentChapterIndex, 0, 0, 0);
+              setResumedToast(null);
+            }}
+            className="flex items-center gap-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline ml-1"
+          >
+            <ArrowUp className="h-3 w-3" /> Top
+          </button>
+        </aside>
+      )}
 
       {/* Chapter Editorial Header */}
       <header className="mb-10 border-b border-[var(--border-hairline)] pb-8 text-center">
@@ -137,7 +229,6 @@ export default function ReaderContent() {
                     >
                       {sent.words.map((w) => {
                         // Crucial fix: ONLY match by unique wordIndex!
-                        // This prevents any other identical words in the paragraph or chapter from being highlighted.
                         const isThisWordActive =
                           activeWord !== null &&
                           activeWord.wordIndex === w.wordIndex &&

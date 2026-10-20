@@ -58,6 +58,8 @@ function ReaderViewInner({ params }: { params: Promise<{ bookId: string }> }) {
   useEffect(() => {
     if (activeBook && (activeBook.currentChapterIndex > 0 || activeBook.currentParagraphIndex > 0)) {
       setShowResumeBanner(true);
+      const timer = setTimeout(() => setShowResumeBanner(false), 6000);
+      return () => clearTimeout(timer);
     }
   }, [activeBook?.id]);
 
@@ -112,10 +114,8 @@ function ReaderViewInner({ params }: { params: Promise<{ bookId: string }> }) {
           <button
             type="button"
             onClick={() => {
-              goToChapter(activeBook.currentChapterIndex);
-              setTimeout(() => {
-                jumpToParagraph(activeBook.currentParagraphIndex);
-              }, 100);
+              goToChapter(activeBook.currentChapterIndex, activeBook.currentParagraphIndex);
+              jumpToParagraph(activeBook.currentParagraphIndex);
               setShowResumeBanner(false);
             }}
             className="rounded-full bg-blue-600 px-2.5 py-0.5 text-xs font-semibold text-white hover:bg-blue-700 transition-colors"

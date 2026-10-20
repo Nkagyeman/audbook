@@ -13,7 +13,7 @@ interface ReaderContextValue {
   currentChapterIndex: number;
   currentChapter: Chapter | null;
   loadBook: (bookId: string) => Promise<boolean>;
-  goToChapter: (order: number) => void;
+  goToChapter: (order: number, targetParagraphIndex?: number, targetWordIndex?: number) => void;
   nextChapter: () => void;
   prevChapter: () => void;
 
@@ -25,6 +25,8 @@ interface ReaderContextValue {
   chapterTokens: ChapterTokens | null;
   jumpToParagraph: (pIdx: number) => void;
   jumpToWord: (charStart: number) => void;
+  persistProgress: (chIdx: number, pIdx: number, wIdx: number, charOffset: number) => Promise<void>;
+  setCurrentParagraphIndex: (pIdx: number) => void;
 
   // Audio Playback
   isPlaying: boolean;
@@ -83,6 +85,38 @@ export function ReaderProvider({ children }: { children: React.ReactNode }) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const lastCharIndexRef = useRef<number>(0);
 
+  // Up-to-date refs to eliminate stale closure bugs during asynchronous events
+  const currentChapterIndexRef = useRef<number>(0);
+  const currentParagraphIndexRef = useRef<number>(0);
+  const currentWordIndexRef = useRef<number>(0);
+  const activeBookRef = useRef<Book | null>(null);
+  const chapterTokensRef = useRef<ChapterTokens | null>(null);
+  const chaptersRef = useRef<Chapter[]>([]);
+
+  useEffect(() => {
+    currentChapterIndexRef.current = currentChapterIndex;
+  }, [currentChapterIndex]);
+
+  useEffect(() => {
+    currentParagraphIndexRef.current = currentParagraphIndex;
+  }, [currentParagraphIndex]);
+
+  useEffect(() => {
+    currentWordIndexRef.current = currentWordIndex;
+  }, [currentWordIndex]);
+
+  useEffect(() => {
+    activeBookRef.current = activeBook;
+  }, [activeBook]);
+
+  useEffect(() => {
+    chapterTokensRef.current = chapterTokens;
+  }, [chapterTokens]);
+
+  useEffect(() => {
+    chaptersRef.current = chapters;
+  }, [chapters]);
+
   // Initialize Speech Controller & Settings
   useEffect(() => {
     speechControllerRef.current = new BrowserSpeechController();
@@ -135,11 +169,122 @@ export function ReaderProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Load a book by ID
+  // Robust progress persistence (IndexedDB + Synchronous localStorage)
+  const persistProgress = useCallback(
+    async (chIdx: number, pIdx: number, wIdx: number, charOffset: number) => {
+      const targetBook = activeBookRef.current;
+      const targetChapters = chaptersRef.current;
+      if (!targetBook || !targetChapters.length) return;
+
+      const totalChapters = targetChapters.length;
+      const chapterWeight = 100 / totalChapters;
+      const tokens = chapterTokensRef.current;
+      const chapterProg = tokens?.words?.length
+        ? (wIdx / tokens.words.length) * chapterWeight
+        : 0;
+      const progressPercent = Math.min(100, Math.round(chIdx * chapterWeight + chapterProg));
+
+      const updatePayload = {
+        currentChapterIndex: chIdx,
+        currentParagraphIndex: pIdx,
+        currentWordIndex: wIdx,
+        currentAudioTimestamp: charOffset,
+        readingProgress: progressPercent,
+        lastReadAt: Date.now(),
+      };
+
+      // 1. Update React state immediately
+      setActiveBook((prev) => (prev ? { ...prev, ...updatePayload } : null));
+
+      // 2. Synchronous localStorage backup (instant, never lost when closing the link)
+      try {
+        localStorage.setItem(`audbook_prog_${targetBook.id}`, JSON.stringify(updatePayload));
+      } catch (e) {
+        console.warn('Could not save progress to localStorage:', e);
+      }
+
+      // 3. Persistent IndexedDB update
+      try {
+        await db.books.update(targetBook.id, updatePayload);
+      } catch (e) {
+        console.warn('Could not save progress to Dexie:', e);
+      }
+    },
+    []
+  );
+
+  // Hook beforeunload and visibilitychange to guarantee progress is saved even on sudden tab/window close
+  useEffect(() => {
+    const handleSaveOnExit = () => {
+      const book = activeBookRef.current;
+      if (!book) return;
+
+      const chIdx = currentChapterIndexRef.current;
+      const pIdx = currentParagraphIndexRef.current;
+      const wIdx = currentWordIndexRef.current;
+      const charOffset = lastCharIndexRef.current;
+      const totalChapters = chaptersRef.current.length || 1;
+      const chapterWeight = 100 / totalChapters;
+      const tokens = chapterTokensRef.current;
+      const chapterProg = tokens?.words?.length ? (wIdx / tokens.words.length) * chapterWeight : 0;
+      const progressPercent = Math.min(100, Math.round(chIdx * chapterWeight + chapterProg));
+
+      const payload = {
+        currentChapterIndex: chIdx,
+        currentParagraphIndex: pIdx,
+        currentWordIndex: wIdx,
+        currentAudioTimestamp: charOffset,
+        readingProgress: progressPercent,
+        lastReadAt: Date.now(),
+      };
+
+      try {
+        localStorage.setItem(`audbook_prog_${book.id}`, JSON.stringify(payload));
+      } catch (e) {}
+
+      try {
+        db.books.update(book.id, payload);
+      } catch (e) {}
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        handleSaveOnExit();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleSaveOnExit);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      handleSaveOnExit();
+      window.removeEventListener('beforeunload', handleSaveOnExit);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
+  // Load a book by ID (merges IndexedDB + localStorage for 100% reliability)
   const loadBook = useCallback(async (bookId: string): Promise<boolean> => {
     try {
       const book = await db.books.get(bookId);
       if (!book) return false;
+
+      // Check if localStorage has newer progress
+      try {
+        const localProgRaw = localStorage.getItem(`audbook_prog_${bookId}`);
+        if (localProgRaw) {
+          const localProg = JSON.parse(localProgRaw);
+          if (!book.lastReadAt || localProg.lastReadAt >= book.lastReadAt) {
+            book.currentChapterIndex = localProg.currentChapterIndex ?? book.currentChapterIndex;
+            book.currentParagraphIndex = localProg.currentParagraphIndex ?? book.currentParagraphIndex;
+            book.currentWordIndex = localProg.currentWordIndex ?? book.currentWordIndex;
+            book.readingProgress = localProg.readingProgress ?? book.readingProgress;
+            book.lastReadAt = localProg.lastReadAt ?? book.lastReadAt;
+          }
+        }
+      } catch (e) {
+        console.warn('Error reading progress from localStorage:', e);
+      }
 
       const bookChapters = await db.chapters.where('bookId').equals(bookId).sortBy('order');
       if (bookChapters.length === 0) return false;
@@ -150,6 +295,7 @@ export function ReaderProvider({ children }: { children: React.ReactNode }) {
       const targetChIndex = Math.min(Math.max(0, book.currentChapterIndex || 0), bookChapters.length - 1);
       setCurrentChapterIndex(targetChIndex);
       setCurrentParagraphIndex(book.currentParagraphIndex || 0);
+      setCurrentWordIndex(book.currentWordIndex || 0);
 
       // Load Bookmarks & Highlights
       const bmarks = await db.bookmarks.where('bookId').equals(bookId).toArray();
@@ -189,36 +335,10 @@ export function ReaderProvider({ children }: { children: React.ReactNode }) {
     }
   }, [currentChapter?.id]);
 
-  // Persist reading position to Dexie
-  const persistProgress = useCallback(
-    async (pIdx: number, wIdx: number, charOffset: number) => {
-      if (!activeBook || !chapters.length) return;
-
-      const totalChapters = chapters.length;
-      const chapterWeight = 100 / totalChapters;
-      const chapterProg = chapterTokens?.words?.length
-        ? (wIdx / chapterTokens.words.length) * chapterWeight
-        : 0;
-      const progressPercent = Math.min(100, Math.round(currentChapterIndex * chapterWeight + chapterProg));
-
-      await db.books.update(activeBook.id, {
-        currentChapterIndex,
-        currentParagraphIndex: pIdx,
-        currentWordIndex: wIdx,
-        currentAudioTimestamp: charOffset,
-        readingProgress: progressPercent,
-        lastReadAt: Date.now(),
-      });
-    },
-    [activeBook, chapters.length, currentChapterIndex, chapterTokens]
-  );
-
   // Auto-scroll to active sentence / word element
   const scrollToActiveElement = useCallback(
     (pIdx: number) => {
       if (!settings.autoScroll) return;
-
-      // Locate paragraph element
       const el = document.querySelector(`[data-p-idx="${pIdx}"]`);
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -234,7 +354,7 @@ export function ReaderProvider({ children }: { children: React.ReactNode }) {
     const rawText = currentChapter.rawText;
     if (!rawText.trim()) return;
 
-    // Determine starting character offset
+    // Determine starting character offset from current paragraph
     let startCharOffset = 0;
     if (chapterTokens && currentParagraphIndex > 0 && currentParagraphIndex < chapterTokens.paragraphStarts.length) {
       startCharOffset = chapterTokens.paragraphStarts[currentParagraphIndex] || 0;
@@ -243,19 +363,30 @@ export function ReaderProvider({ children }: { children: React.ReactNode }) {
     setIsPlaying(true);
     setIsPaused(false);
 
+    let lastProgressSaveTime = Date.now();
+
     speechControllerRef.current.play(rawText, startCharOffset, {
       onBoundary: ({ charIndex }) => {
         lastCharIndexRef.current = charIndex;
-        if (!chapterTokens) return;
+        const tokens = chapterTokensRef.current;
+        if (!tokens) return;
 
-        const { word, sentence } = findTokenByCharIndex(chapterTokens, charIndex);
+        const { word, sentence } = findTokenByCharIndex(tokens, charIndex);
         if (word) {
           setActiveWord(word);
           setCurrentWordIndex(word.wordIndex);
-          if (word.paragraphIndex !== currentParagraphIndex) {
+
+          const hasParagraphChanged = word.paragraphIndex !== currentParagraphIndexRef.current;
+          const hasTimeElapsed = Date.now() - lastProgressSaveTime > 3000;
+
+          if (hasParagraphChanged) {
             setCurrentParagraphIndex(word.paragraphIndex);
             scrollToActiveElement(word.paragraphIndex);
-            persistProgress(word.paragraphIndex, word.wordIndex, charIndex);
+          }
+
+          if (hasParagraphChanged || hasTimeElapsed) {
+            lastProgressSaveTime = Date.now();
+            persistProgress(currentChapterIndexRef.current, word.paragraphIndex, word.wordIndex, charIndex);
           }
         }
         if (sentence) {
@@ -268,8 +399,8 @@ export function ReaderProvider({ children }: { children: React.ReactNode }) {
         setActiveWord(null);
         setActiveSentence(null);
         // Advance to next chapter automatically if available
-        if (currentChapterIndex < chapters.length - 1) {
-          goToChapter(currentChapterIndex + 1);
+        if (currentChapterIndexRef.current < chaptersRef.current.length - 1) {
+          goToChapter(currentChapterIndexRef.current + 1, 0, 0);
         }
       },
       onError: (err) => {
@@ -278,13 +409,20 @@ export function ReaderProvider({ children }: { children: React.ReactNode }) {
         setIsPaused(false);
       },
     });
-  }, [currentChapter, chapterTokens, currentParagraphIndex, currentChapterIndex, chapters.length, scrollToActiveElement, persistProgress]);
+  }, [currentChapter, chapterTokens, currentParagraphIndex, scrollToActiveElement, persistProgress]);
 
   const pauseAudio = useCallback(() => {
     speechControllerRef.current?.pause();
     setIsPlaying(false);
     setIsPaused(true);
-  }, []);
+    // Explicitly persist position immediately on pause
+    persistProgress(
+      currentChapterIndexRef.current,
+      currentParagraphIndexRef.current,
+      currentWordIndexRef.current,
+      lastCharIndexRef.current
+    );
+  }, [persistProgress]);
 
   const resumeAudio = useCallback(() => {
     speechControllerRef.current?.resume();
@@ -296,9 +434,15 @@ export function ReaderProvider({ children }: { children: React.ReactNode }) {
     speechControllerRef.current?.stop();
     setIsPlaying(false);
     setIsPaused(false);
+    persistProgress(
+      currentChapterIndexRef.current,
+      currentParagraphIndexRef.current,
+      currentWordIndexRef.current,
+      lastCharIndexRef.current
+    );
     setActiveWord(null);
     setActiveSentence(null);
-  }, []);
+  }, [persistProgress]);
 
   const togglePlayPause = useCallback(() => {
     if (isPlaying) {
@@ -312,43 +456,45 @@ export function ReaderProvider({ children }: { children: React.ReactNode }) {
 
   const seekRelative = useCallback(
     (secondsOffset: number) => {
-      if (!chapterTokens) return;
-      // Approximate 3 words per second
+      const tokens = chapterTokensRef.current;
+      if (!tokens) return;
       const wordsJump = Math.round(secondsOffset * 3);
-      const targetWordIdx = Math.max(0, Math.min(chapterTokens.words.length - 1, currentWordIndex + wordsJump));
-      const targetWord = chapterTokens.words[targetWordIdx];
+      const targetWordIdx = Math.max(0, Math.min(tokens.words.length - 1, currentWordIndexRef.current + wordsJump));
+      const targetWord = tokens.words[targetWordIdx];
       if (targetWord) {
         jumpToWord(targetWord.charStart);
       }
     },
-    [chapterTokens, currentWordIndex]
+    []
   );
 
   const jumpToParagraph = useCallback(
     (pIdx: number) => {
-      if (!chapterTokens) return;
-      const charOffset = chapterTokens.paragraphStarts[pIdx] || 0;
+      const tokens = chapterTokensRef.current;
+      if (!tokens) return;
+      const charOffset = tokens.paragraphStarts[pIdx] || 0;
       setCurrentParagraphIndex(pIdx);
       scrollToActiveElement(pIdx);
 
       if (speechControllerRef.current && (isPlaying || isPaused)) {
         speechControllerRef.current.seekTo(charOffset);
       }
-      persistProgress(pIdx, 0, charOffset);
+      persistProgress(currentChapterIndexRef.current, pIdx, 0, charOffset);
     },
-    [chapterTokens, isPlaying, isPaused, scrollToActiveElement, persistProgress]
+    [isPlaying, isPaused, scrollToActiveElement, persistProgress]
   );
 
   const jumpToWord = useCallback(
     (charStart: number) => {
-      if (!chapterTokens) return;
-      const { word, sentence } = findTokenByCharIndex(chapterTokens, charStart);
+      const tokens = chapterTokensRef.current;
+      if (!tokens) return;
+      const { word, sentence } = findTokenByCharIndex(tokens, charStart);
       if (word) {
         setActiveWord(word);
         setCurrentParagraphIndex(word.paragraphIndex);
         setCurrentWordIndex(word.wordIndex);
         scrollToActiveElement(word.paragraphIndex);
-        persistProgress(word.paragraphIndex, word.wordIndex, charStart);
+        persistProgress(currentChapterIndexRef.current, word.paragraphIndex, word.wordIndex, charStart);
       }
       if (sentence) {
         setActiveSentence(sentence);
@@ -356,15 +502,14 @@ export function ReaderProvider({ children }: { children: React.ReactNode }) {
       if (speechControllerRef.current && (isPlaying || isPaused)) {
         speechControllerRef.current.seekTo(charStart);
       } else if (!isPlaying) {
-        // Start playback from this word
         if (!currentChapter) return;
         speechControllerRef.current?.play(currentChapter.rawText, charStart, {
           onBoundary: ({ charIndex }) => {
-            const res = findTokenByCharIndex(chapterTokens, charIndex);
+            const res = findTokenByCharIndex(tokens, charIndex);
             if (res.word) {
               setActiveWord(res.word);
               setCurrentWordIndex(res.word.wordIndex);
-              if (res.word.paragraphIndex !== currentParagraphIndex) {
+              if (res.word.paragraphIndex !== currentParagraphIndexRef.current) {
                 setCurrentParagraphIndex(res.word.paragraphIndex);
                 scrollToActiveElement(res.word.paragraphIndex);
               }
@@ -376,54 +521,48 @@ export function ReaderProvider({ children }: { children: React.ReactNode }) {
         setIsPaused(false);
       }
     },
-    [chapterTokens, currentChapter, isPlaying, isPaused, currentParagraphIndex, scrollToActiveElement, persistProgress]
+    [currentChapter, isPlaying, isPaused, scrollToActiveElement, persistProgress]
   );
 
   const goToChapter = useCallback(
-    (order: number) => {
-      if (order < 0 || order >= chapters.length) return;
+    (order: number, targetParagraphIndex: number = 0, targetWordIndex: number = 0) => {
+      if (order < 0 || order >= chaptersRef.current.length) return;
       speechControllerRef.current?.stop();
       setIsPlaying(false);
       setIsPaused(false);
       setCurrentChapterIndex(order);
-      setCurrentParagraphIndex(0);
-      setCurrentWordIndex(0);
+      setCurrentParagraphIndex(targetParagraphIndex);
+      setCurrentWordIndex(targetWordIndex);
       setActiveWord(null);
       setActiveSentence(null);
 
-      if (activeBook) {
-        db.books.update(activeBook.id, {
-          currentChapterIndex: order,
-          currentParagraphIndex: 0,
-          currentWordIndex: 0,
-          lastReadAt: Date.now(),
-        });
-      }
+      persistProgress(order, targetParagraphIndex, targetWordIndex, 0);
     },
-    [chapters.length, activeBook]
+    [persistProgress]
   );
 
   const nextChapter = useCallback(() => {
-    if (currentChapterIndex < chapters.length - 1) {
-      goToChapter(currentChapterIndex + 1);
+    if (currentChapterIndexRef.current < chaptersRef.current.length - 1) {
+      goToChapter(currentChapterIndexRef.current + 1, 0, 0);
     }
-  }, [currentChapterIndex, chapters.length, goToChapter]);
+  }, [goToChapter]);
 
   const prevChapter = useCallback(() => {
-    if (currentChapterIndex > 0) {
-      goToChapter(currentChapterIndex - 1);
+    if (currentChapterIndexRef.current > 0) {
+      goToChapter(currentChapterIndexRef.current - 1, 0, 0);
     }
-  }, [currentChapterIndex, goToChapter]);
+  }, [goToChapter]);
 
   // Bookmarks
   const addBookmark = async (snippet?: string) => {
-    if (!activeBook || !currentChapter) return;
+    const book = activeBookRef.current;
+    if (!book || !currentChapter) return;
     const newBookmark: Bookmark = {
       id: `bm-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      bookId: activeBook.id,
-      chapterIndex: currentChapterIndex,
+      bookId: book.id,
+      chapterIndex: currentChapterIndexRef.current,
       chapterTitle: currentChapter.title,
-      paragraphIndex: currentParagraphIndex,
+      paragraphIndex: currentParagraphIndexRef.current,
       snippet: snippet || activeSentence?.text || currentChapter.rawText.slice(0, 100) + '...',
       createdAt: Date.now(),
     };
@@ -438,13 +577,14 @@ export function ReaderProvider({ children }: { children: React.ReactNode }) {
 
   // Highlights
   const addHighlight = async (selectedText: string, color: Highlight['color'], note?: string) => {
-    if (!activeBook || !currentChapter || !selectedText.trim()) return;
+    const book = activeBookRef.current;
+    if (!book || !currentChapter || !selectedText.trim()) return;
     const newHighlight: Highlight = {
       id: `hl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      bookId: activeBook.id,
-      chapterIndex: currentChapterIndex,
+      bookId: book.id,
+      chapterIndex: currentChapterIndexRef.current,
       chapterTitle: currentChapter.title,
-      paragraphIndex: currentParagraphIndex,
+      paragraphIndex: currentParagraphIndexRef.current,
       selectedText,
       color,
       note,
@@ -476,6 +616,8 @@ export function ReaderProvider({ children }: { children: React.ReactNode }) {
     chapterTokens,
     jumpToParagraph,
     jumpToWord,
+    persistProgress,
+    setCurrentParagraphIndex,
 
     isPlaying,
     isPaused,

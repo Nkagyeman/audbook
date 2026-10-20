@@ -39,7 +39,29 @@ export default function LibraryPage() {
     setIsLoading(true);
     await seedSampleBooksIfEmpty();
     const all = await db.books.orderBy('lastReadAt').reverse().toArray();
-    setBooks(all);
+
+    // Merge recent progress from localStorage
+    const merged = all.map((b) => {
+      try {
+        const localProgRaw = localStorage.getItem(`audbook_prog_${b.id}`);
+        if (localProgRaw) {
+          const lp = JSON.parse(localProgRaw);
+          if (!b.lastReadAt || lp.lastReadAt >= b.lastReadAt) {
+            return {
+              ...b,
+              currentChapterIndex: lp.currentChapterIndex ?? b.currentChapterIndex,
+              currentParagraphIndex: lp.currentParagraphIndex ?? b.currentParagraphIndex,
+              currentWordIndex: lp.currentWordIndex ?? b.currentWordIndex,
+              readingProgress: lp.readingProgress ?? b.readingProgress,
+              lastReadAt: lp.lastReadAt ?? b.lastReadAt,
+            };
+          }
+        }
+      } catch (e) {}
+      return b;
+    });
+
+    setBooks(merged);
     setIsLoading(false);
   };
 
