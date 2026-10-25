@@ -198,8 +198,25 @@ export default function ReaderContent() {
     return () => window.removeEventListener('keydown', handleKey);
   }, [lightboxImage]);
 
+type ContentBlock =
+  | { id: string; type: 'figure'; src: string; alt: string; caption?: string }
+  | { id: string; type: 'table'; html: string }
+  | { id: string; type: 'divider' }
+  | { id: string; type: 'code'; code: string }
+  | {
+      id: string;
+      type: 'text';
+      pIdx: number;
+      tagName: string;
+      isHeading: boolean;
+      headingLevel?: number;
+      isQuote: boolean;
+      isListItem: boolean;
+      rawText: string;
+    };
+
   // Parse currentChapter.content into visual blocks (text, figure, table, divider, code)
-  const contentBlocks = useMemo(() => {
+  const contentBlocks = useMemo<ContentBlock[]>(() => {
     if (!currentChapter?.content) return [];
     if (typeof window === 'undefined') return [];
 
@@ -212,7 +229,7 @@ export default function ReaderContent() {
       const elements = Array.from(container.children);
       if (elements.length === 0) return [];
 
-      return elements.map((el, idx) => {
+      return elements.map((el, idx): ContentBlock => {
         const tagName = el.tagName.toLowerCase();
         const pIdxAttr = el.getAttribute('data-p-idx');
         const pIdx = pIdxAttr !== null ? parseInt(pIdxAttr, 10) : undefined;
@@ -377,7 +394,8 @@ export default function ReaderContent() {
       <div className={`space-y-6 ${alignClass} text-[var(--text-ink)]`}>
         {contentBlocks.length > 0 ? (
           contentBlocks.map((block) => {
-            if (block.type === 'figure' && block.src) {
+            if (block.type === 'figure') {
+              if (!block.src) return null;
               return (
                 <figure
                   key={block.id}
@@ -435,8 +453,8 @@ export default function ReaderContent() {
               );
             }
 
-            // Text block (with karaoke highlighting)
-            const pIdx = block.pIdx;
+            if (block.type === 'text') {
+              const pIdx = block.pIdx;
             const paraToken = chapterTokens?.paragraphs.find(
               (p) => p.paragraphIndex === pIdx
             );
@@ -636,7 +654,9 @@ export default function ReaderContent() {
                 })}
               </p>
             );
-          })
+          }
+          return null;
+        })
         ) : (
           currentChapter.rawText
             .split(/\n\s*\n/)
