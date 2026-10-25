@@ -76,7 +76,7 @@ export default function ReaderContent() {
           }
         }
       }
-    } catch (e) {}
+    } catch {}
 
     if (targetPIdx <= 0 && (!targetScrollY || targetScrollY <= 20)) {
       hasRestoredScrollRef.current = true;
@@ -106,7 +106,7 @@ export default function ReaderContent() {
     }, 120);
 
     return () => clearInterval(restoreTimer);
-  }, [activeBook?.id, chapterTokens, currentChapterIndex, currentParagraphIndex]);
+  }, [activeBook, chapterTokens, currentChapterIndex, currentParagraphIndex]);
 
   // High-precision scroll tracking for silent reading (instant persistence to localStorage & Dexie)
   useEffect(() => {
@@ -156,7 +156,7 @@ export default function ReaderContent() {
             };
             try {
               localStorage.setItem(`audbook_scroll_${activeBook.id}`, JSON.stringify(scrollData));
-            } catch (e) {}
+            } catch {}
 
             persistProgress(currentChapterIndex, bestPIdx, 0, 0);
           }, 250);
@@ -170,7 +170,7 @@ export default function ReaderContent() {
       window.removeEventListener('scroll', handleScroll);
       clearTimeout(debounceTimer);
     };
-  }, [isPlaying, activeBook?.id, currentChapterIndex, currentParagraphIndex, persistProgress, setCurrentParagraphIndex]);
+  }, [isPlaying, activeBook, currentChapterIndex, currentParagraphIndex, persistProgress, setCurrentParagraphIndex]);
 
   // Highlights in current chapter
   const currentChapterHighlights = useMemo(() => {
@@ -265,7 +265,7 @@ export default function ReaderContent() {
     } catch {
       return [];
     }
-  }, [currentChapter?.content]);
+  }, [currentChapter]);
 
   if (!currentChapter || !activeBook) {
     return (
