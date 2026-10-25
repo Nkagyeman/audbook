@@ -38,14 +38,15 @@ export default function AuthModal({ isOpen, onClose, onSyncComplete }: AuthModal
   useEffect(() => {
     if (!configured || !supabase) return;
 
+    const client = supabase;
     const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session } } = await client.auth.getSession();
       setUser(session?.user ?? null);
     };
 
     checkUser();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = client.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
     });
 
