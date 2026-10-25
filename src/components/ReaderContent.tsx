@@ -2,8 +2,25 @@
 
 import React, { useMemo, useEffect, useRef, useState } from 'react';
 import { useReader } from '@/context/ReaderContext';
-import { ArrowRight, BookOpen, Clock, ArrowUp, Check, X, ZoomIn } from 'lucide-react';
+import { ArrowRight, BookOpen, Clock, ArrowUp, Check, X } from 'lucide-react';
 import TextSelectionPopover from './TextSelectionPopover';
+
+type ContentBlock =
+  | { id: string; type: 'figure'; src: string; alt: string; caption?: string }
+  | { id: string; type: 'table'; html: string }
+  | { id: string; type: 'divider' }
+  | { id: string; type: 'code'; code: string }
+  | {
+      id: string;
+      type: 'text';
+      pIdx: number;
+      tagName: string;
+      isHeading: boolean;
+      headingLevel?: number;
+      isQuote: boolean;
+      isListItem: boolean;
+      rawText: string;
+    };
 
 export default function ReaderContent() {
   const {
@@ -155,34 +172,6 @@ export default function ReaderContent() {
     };
   }, [isPlaying, activeBook?.id, currentChapterIndex, currentParagraphIndex, persistProgress, setCurrentParagraphIndex]);
 
-  if (!currentChapter || !activeBook) {
-    return (
-      <div className="flex flex-col items-center justify-center py-24 text-[var(--text-muted)]">
-        <BookOpen className="mb-2 h-8 w-8 animate-pulse" />
-        <p className="text-sm font-medium">Loading chapter content...</p>
-      </div>
-    );
-  }
-
-  // Formatting settings classes
-  const fontClass =
-    settings.fontFamily === 'literata'
-      ? 'font-literata'
-      : settings.fontFamily === 'merriweather'
-      ? 'font-merriweather'
-      : settings.fontFamily === 'opendyslexic'
-      ? 'font-opendyslexic'
-      : 'font-inter';
-
-  const widthClass =
-    settings.columnWidth === 'narrow'
-      ? 'max-w-[55ch]'
-      : settings.columnWidth === 'wide'
-      ? 'max-w-[80ch]'
-      : 'max-w-[65ch]';
-
-  const alignClass = settings.textAlign === 'justify' ? 'text-justify' : 'text-left';
-
   // Highlights in current chapter
   const currentChapterHighlights = useMemo(() => {
     return highlights.filter((h) => h.chapterIndex === currentChapterIndex);
@@ -197,23 +186,6 @@ export default function ReaderContent() {
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [lightboxImage]);
-
-type ContentBlock =
-  | { id: string; type: 'figure'; src: string; alt: string; caption?: string }
-  | { id: string; type: 'table'; html: string }
-  | { id: string; type: 'divider' }
-  | { id: string; type: 'code'; code: string }
-  | {
-      id: string;
-      type: 'text';
-      pIdx: number;
-      tagName: string;
-      isHeading: boolean;
-      headingLevel?: number;
-      isQuote: boolean;
-      isListItem: boolean;
-      rawText: string;
-    };
 
   // Parse currentChapter.content into visual blocks (text, figure, table, divider, code)
   const contentBlocks = useMemo<ContentBlock[]>(() => {
@@ -293,7 +265,35 @@ type ContentBlock =
     } catch {
       return [];
     }
-  }, [currentChapter?.id, currentChapter?.content]);
+  }, [currentChapter?.content]);
+
+  if (!currentChapter || !activeBook) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-[var(--text-muted)]">
+        <BookOpen className="mb-2 h-8 w-8 animate-pulse" />
+        <p className="text-sm font-medium">Loading chapter content...</p>
+      </div>
+    );
+  }
+
+  // Formatting settings classes
+  const fontClass =
+    settings.fontFamily === 'literata'
+      ? 'font-literata'
+      : settings.fontFamily === 'merriweather'
+      ? 'font-merriweather'
+      : settings.fontFamily === 'opendyslexic'
+      ? 'font-opendyslexic'
+      : 'font-inter';
+
+  const widthClass =
+    settings.columnWidth === 'narrow'
+      ? 'max-w-[55ch]'
+      : settings.columnWidth === 'wide'
+      ? 'max-w-[80ch]'
+      : 'max-w-[65ch]';
+
+  const alignClass = settings.textAlign === 'justify' ? 'text-justify' : 'text-left';
 
   return (
     <article
@@ -675,7 +675,7 @@ type ContentBlock =
           End of {currentChapter.title}
         </h3>
         <p className="mt-1 text-xs text-[var(--text-muted)]">
-          You've completed this chapter.
+          You&apos;ve completed this chapter.
         </p>
 
         <div className="mt-5 flex justify-center gap-3">
