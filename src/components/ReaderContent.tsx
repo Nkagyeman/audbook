@@ -2,7 +2,7 @@
 
 import React, { useMemo, useEffect, useRef, useState } from 'react';
 import { useReader } from '@/context/ReaderContext';
-import { ArrowRight, BookOpen, Clock, ArrowUp, Check } from 'lucide-react';
+import { ArrowRight, BookOpen, Clock, ArrowUp, Check, X, ZoomIn } from 'lucide-react';
 import TextSelectionPopover from './TextSelectionPopover';
 
 export default function ReaderContent() {
@@ -26,6 +26,11 @@ export default function ReaderContent() {
   } = useReader();
 
   const [resumedToast, setResumedToast] = useState<number | null>(null);
+  const [lightboxImage, setLightboxImage] = useState<{
+    src: string;
+    alt: string;
+    caption?: string;
+  } | null>(null);
   const hasRestoredScrollRef = useRef(false);
 
   // Reset scroll restoration flag when book or chapter changes
@@ -183,6 +188,96 @@ export default function ReaderContent() {
     return highlights.filter((h) => h.chapterIndex === currentChapterIndex);
   }, [highlights, currentChapterIndex]);
 
+  // Close lightbox on Escape key
+  useEffect(() => {
+    if (!lightboxImage) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLightboxImage(null);
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [lightboxImage]);
+
+  // Parse currentChapter.content into visual blocks (text, figure, table, divider, code)
+  const contentBlocks = useMemo(() => {
+    if (!currentChapter?.content) return [];
+    if (typeof window === 'undefined') return [];
+
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(`<div>${currentChapter.content}</div>`, 'text/html');
+      const container = doc.body.firstElementChild;
+      if (!container) return [];
+
+      const elements = Array.from(container.children);
+      if (elements.length === 0) return [];
+
+      return elements.map((el, idx) => {
+        const tagName = el.tagName.toLowerCase();
+        const pIdxAttr = el.getAttribute('data-p-idx');
+        const pIdx = pIdxAttr !== null ? parseInt(pIdxAttr, 10) : undefined;
+
+        // 1. Figure / Image block
+        if (tagName === 'figure' || el.classList.contains('audbook-figure') || tagName === 'img') {
+          const img = tagName === 'img' ? el : el.querySelector('img');
+          const caption = el.querySelector('figcaption')?.textContent || '';
+          return {
+            id: `figure-${idx}`,
+            type: 'figure' as const,
+            src: img?.getAttribute('src') || '',
+            alt: img?.getAttribute('alt') || '',
+            caption: caption.trim() || undefined,
+          };
+        }
+
+        // 2. Table block
+        if (tagName === 'table' || el.classList.contains('audbook-table-wrapper') || el.querySelector('table')) {
+          const tableEl = tagName === 'table' ? el : el.querySelector('table');
+          return {
+            id: `table-${idx}`,
+            type: 'table' as const,
+            html: tableEl?.outerHTML || el.innerHTML,
+          };
+        }
+
+        // 3. Horizontal Rule / Divider
+        if (tagName === 'hr' || el.classList.contains('audbook-divider')) {
+          return {
+            id: `divider-${idx}`,
+            type: 'divider' as const,
+          };
+        }
+
+        // 4. Preformatted Code block
+        if (tagName === 'pre' || el.classList.contains('audbook-pre')) {
+          return {
+            id: `code-${idx}`,
+            type: 'code' as const,
+            code: el.textContent || '',
+          };
+        }
+
+        // 5. Text block (headings, quotes, list items, paragraphs)
+        const isHeading = tagName.startsWith('h') && tagName.length === 2;
+        const headingLevel = isHeading ? parseInt(tagName.replace('h', ''), 10) : undefined;
+
+        return {
+          id: `text-${pIdx ?? idx}`,
+          type: 'text' as const,
+          pIdx: pIdx ?? idx,
+          tagName,
+          isHeading,
+          headingLevel,
+          isQuote: tagName === 'blockquote',
+          isListItem: tagName === 'li',
+          rawText: el.textContent || '',
+        };
+      });
+    } catch {
+      return [];
+    }
+  }, [currentChapter?.id, currentChapter?.content]);
+
   return (
     <article
       className={`mx-auto w-full px-4 pt-8 pb-32 sm:px-6 ${widthClass} ${fontClass} transition-all duration-200 select-text`}
@@ -192,6 +287,42 @@ export default function ReaderContent() {
       }}
     >
       <TextSelectionPopover />
+
+      {/* Image Lightbox Modal */}
+      {lightboxImage && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Image Preview"
+          onClick={() => setLightboxImage(null)}
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-200"
+        >
+          <button
+            type="button"
+            onClick={() => setLightboxImage(null)}
+            aria-label="Close image preview"
+            className="absolute top-4 right-4 rounded-full bg-white/10 p-2 text-white/80 hover:bg-white/20 hover:text-white transition-colors"
+          >
+            <X className="h-5 w-5" />
+          </button>
+
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="flex max-h-[85vh] max-w-4xl flex-col items-center justify-center overflow-hidden rounded-2xl bg-[var(--bg-surface)] p-2 shadow-2xl border border-white/10"
+          >
+            <img
+              src={lightboxImage.src}
+              alt={lightboxImage.alt || 'Illustration'}
+              className="max-h-[75vh] w-auto max-w-full rounded-xl object-contain"
+            />
+            {lightboxImage.caption && (
+              <p className="mt-3 px-4 pb-2 text-center text-xs italic text-[var(--text-secondary)]">
+                {lightboxImage.caption}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Discreet Resumed Position Notification */}
       {resumedToast && (
@@ -242,16 +373,189 @@ export default function ReaderContent() {
         </div>
       </header>
 
-      {/* Chapter Paragraphs Container */}
+      {/* Chapter Paragraphs & Media Container */}
       <div className={`space-y-6 ${alignClass} text-[var(--text-ink)]`}>
-        {chapterTokens && chapterTokens.paragraphs.length > 0 ? (
+        {contentBlocks.length > 0 ? (
+          contentBlocks.map((block) => {
+            if (block.type === 'figure' && block.src) {
+              return (
+                <figure
+                  key={block.id}
+                  className="audbook-figure my-8 flex flex-col items-center justify-center text-center"
+                >
+                  <img
+                    src={block.src}
+                    alt={block.alt || 'Book Illustration'}
+                    onClick={() =>
+                      setLightboxImage({
+                        src: block.src,
+                        alt: block.alt,
+                        caption: block.caption,
+                      })
+                    }
+                    className="audbook-image max-h-[72vh] max-w-full rounded-xl border border-[var(--border-hairline)] object-contain shadow-md cursor-zoom-in"
+                    loading="lazy"
+                  />
+                  {block.caption && (
+                    <figcaption className="audbook-caption mt-2.5 text-xs text-[var(--text-muted)] italic font-sans">
+                      {block.caption}
+                    </figcaption>
+                  )}
+                </figure>
+              );
+            }
+
+            if (block.type === 'table') {
+              return (
+                <div
+                  key={block.id}
+                  className="audbook-table-wrapper my-6 overflow-x-auto rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)]/30 p-2"
+                  dangerouslySetInnerHTML={{ __html: block.html }}
+                />
+              );
+            }
+
+            if (block.type === 'divider') {
+              return (
+                <hr
+                  key={block.id}
+                  className="audbook-divider my-8 border-t border-[var(--border-hairline)] opacity-60"
+                />
+              );
+            }
+
+            if (block.type === 'code') {
+              return (
+                <pre
+                  key={block.id}
+                  className="audbook-pre my-4 overflow-x-auto rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-elevated)] p-4 font-mono text-xs text-[var(--text-ink)] leading-relaxed"
+                >
+                  <code>{block.code}</code>
+                </pre>
+              );
+            }
+
+            // Text block (with karaoke highlighting)
+            const pIdx = block.pIdx;
+            const paraToken = chapterTokens?.paragraphs.find(
+              (p) => p.paragraphIndex === pIdx
+            );
+
+            const pHighlights = currentChapterHighlights.filter(
+              (h) => h.paragraphIndex === pIdx
+            );
+
+            // Compute precise character ranges for user highlights
+            const highlightRanges = paraToken
+              ? (pHighlights
+                  .map((h) => {
+                    const localIdx = paraToken.text.indexOf(h.selectedText);
+                    if (localIdx === -1) return null;
+                    return {
+                      globalStart: paraToken.charStart + localIdx,
+                      globalEnd: paraToken.charStart + localIdx + h.selectedText.length,
+                      color: h.color,
+                    };
+                  })
+                  .filter(Boolean) as Array<{
+                  globalStart: number;
+                  globalEnd: number;
+                  color: string;
+                }>)
+              : [];
+
+            let textTagClass =
+              'relative my-3 leading-relaxed transition-colors duration-150 cursor-pointer';
+
+            if (block.isHeading) {
+              textTagClass +=
+                ' chapter-heading font-serif font-bold tracking-tight text-[var(--text-ink)]';
+              if (block.headingLevel === 1) textTagClass += ' text-2xl sm:text-3xl my-6';
+              else if (block.headingLevel === 2) textTagClass += ' text-xl sm:text-2xl my-5';
+              else textTagClass += ' text-lg sm:text-xl my-4';
+            } else if (block.isQuote) {
+              textTagClass +=
+                ' border-l-2 border-blue-500/60 pl-4 italic text-[var(--text-secondary)] my-4 opacity-95';
+            } else if (block.isListItem) {
+              textTagClass += ' list-disc ml-6 my-1.5';
+            }
+
+            return (
+              <p
+                key={block.id}
+                data-p-idx={pIdx}
+                onClick={() => jumpToParagraph(pIdx)}
+                className={textTagClass}
+              >
+                {paraToken ? (
+                  paraToken.sentences.map((sent) => {
+                    const isSentenceActive =
+                      activeSentence !== null &&
+                      activeSentence.sentenceIndex === sent.sentenceIndex &&
+                      (settings.highlightMode === 'both' ||
+                        settings.highlightMode === 'sentence');
+
+                    return (
+                      <span
+                        key={sent.sentenceIndex}
+                        className={`transition-colors duration-150 rounded ${
+                          isSentenceActive ? 'karaoke-sentence-active' : ''
+                        }`}
+                      >
+                        {sent.words.map((w) => {
+                          const isThisWordActive =
+                            activeWord !== null &&
+                            activeWord.wordIndex === w.wordIndex &&
+                            (settings.highlightMode === 'both' ||
+                              settings.highlightMode === 'word');
+
+                          const matchedUserHighlight = highlightRanges.find(
+                            (hr) =>
+                              w.charStart >= hr.globalStart &&
+                              w.charEnd <= hr.globalEnd
+                          );
+
+                          let wordClass =
+                            'cursor-pointer transition-all duration-100 hover:opacity-80';
+
+                          if (isThisWordActive) {
+                            wordClass += ' karaoke-word-active';
+                          } else if (matchedUserHighlight) {
+                            wordClass += ` highlight-${matchedUserHighlight.color}`;
+                          }
+
+                          return (
+                            <React.Fragment key={w.wordIndex}>
+                              <span
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  jumpToWord(w.charStart);
+                                }}
+                                className={wordClass}
+                              >
+                                {w.rawWord}
+                              </span>
+                              {w.trailingSpace}
+                            </React.Fragment>
+                          );
+                        })}
+                        {sent.trailingSpace}
+                      </span>
+                    );
+                  })
+                ) : (
+                  block.rawText
+                )}
+              </p>
+            );
+          })
+        ) : chapterTokens && chapterTokens.paragraphs.length > 0 ? (
           chapterTokens.paragraphs.map((para) => {
             const pIdx = para.paragraphIndex;
             const pHighlights = currentChapterHighlights.filter(
               (h) => h.paragraphIndex === pIdx
             );
 
-            // Compute precise character ranges for user highlights in this paragraph
             const highlightRanges = pHighlights
               .map((h) => {
                 const localIdx = para.text.indexOf(h.selectedText);
@@ -290,14 +594,12 @@ export default function ReaderContent() {
                       }`}
                     >
                       {sent.words.map((w) => {
-                        // Crucial fix: ONLY match by unique wordIndex!
                         const isThisWordActive =
                           activeWord !== null &&
                           activeWord.wordIndex === w.wordIndex &&
                           (settings.highlightMode === 'both' ||
                             settings.highlightMode === 'word');
 
-                        // Match user highlight strictly by character offset range
                         const matchedUserHighlight = highlightRanges.find(
                           (hr) =>
                             w.charStart >= hr.globalStart &&
@@ -336,7 +638,6 @@ export default function ReaderContent() {
             );
           })
         ) : (
-          // Fallback while tokens are initializing
           currentChapter.rawText
             .split(/\n\s*\n/)
             .filter((p) => p.trim().length > 0)

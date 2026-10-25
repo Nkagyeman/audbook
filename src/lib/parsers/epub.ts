@@ -197,19 +197,54 @@ export async function parseEpubFile(file: File | Blob): Promise<ParsedBookResult
     // Remove scripts and styles
     doc.querySelectorAll('script, style, noscript, link[rel="stylesheet"]').forEach((el) => el.remove());
 
-    // Resolve inline images to base64 Data URLs so images work offline
-    const imgElements = Array.from(doc.querySelectorAll('img, image'));
+    // Resolve inline images (img, image, source) to base64 Data URLs so images work offline
+    const imgElements = Array.from(doc.querySelectorAll('img, image, source'));
     for (const img of imgElements) {
-      const src = img.getAttribute('src') || img.getAttribute('xlink:href');
-      if (src && !src.startsWith('data:') && !src.startsWith('http')) {
-        const resolvedImgPath = resolvePath(chapterPath, src);
-        const imgFile = zip.file(resolvedImgPath) || zip.file(src);
+      const rawSrc =
+        img.getAttribute('src') ||
+        img.getAttribute('xlink:href') ||
+        img.getAttribute('href') ||
+        img.getAttribute('srcset');
+      if (rawSrc && !rawSrc.startsWith('data:') && !rawSrc.startsWith('http')) {
+        const cleanSrc = decodeURIComponent(rawSrc.split(' ')[0].split('#')[0]);
+        const resolvedImgPath = resolvePath(chapterPath, cleanSrc);
+        let imgFile = zip.file(resolvedImgPath) || zip.file(cleanSrc);
+        
+        // Fallback: search zip entries by filename
+        if (!imgFile) {
+          const filename = cleanSrc.split('/').pop();
+          if (filename) {
+            const matchedKey = Object.keys(zip.files).find(
+              (k) => k.endsWith('/' + filename) || k === filename
+            );
+            if (matchedKey) imgFile = zip.file(matchedKey);
+          }
+        }
+
         if (imgFile) {
           try {
-            const ext = src.split('.').pop()?.toLowerCase() || 'jpg';
-            const mime = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : ext === 'svg' ? 'image/svg+xml' : 'image/jpeg';
+            const ext = cleanSrc.split('.').pop()?.toLowerCase() || 'jpg';
+            const mime =
+              ext === 'png'
+                ? 'image/png'
+                : ext === 'gif'
+                ? 'image/gif'
+                : ext === 'svg'
+                ? 'image/svg+xml'
+                : ext === 'webp'
+                ? 'image/webp'
+                : 'image/jpeg';
             const base64 = await imgFile.async('base64');
-            img.setAttribute('src', `data:${mime};base64,${base64}`);
+            const dataUrl = `data:${mime};base64,${base64}`;
+
+            if (img.tagName.toLowerCase() === 'image') {
+              img.setAttribute('href', dataUrl);
+              img.setAttribute('xlink:href', dataUrl);
+            } else if (img.hasAttribute('srcset')) {
+              img.setAttribute('srcset', dataUrl);
+            } else {
+              img.setAttribute('src', dataUrl);
+            }
           } catch {
             // keep src as is
           }
@@ -226,39 +261,169 @@ export async function parseEpubFile(file: File | Blob): Promise<ParsedBookResult
       }
     }
 
-    // Extract text blocks
+    // Extract structured blocks preserving images, tables, quotes, and text in visual order
     const body = doc.body;
     if (!body) continue;
 
-    // Extract blocks (<p>, <h1>-<h6>, <blockquote>, <ul>, <ol>, <div>)
-    const blockNodes = Array.from(body.querySelectorAll('p, h1, h2, h3, h4, h5, h6, blockquote, li'));
-    const validParagraphs: string[] = [];
+    const structuredBlocks: string[] = [];
     const plainParagraphs: string[] = [];
+    let pIdx = 0;
 
-    if (blockNodes.length > 0) {
-      blockNodes.forEach((node) => {
-        const text = node.textContent?.trim();
-        if (text && text.length > 2) {
-          const tagName = node.tagName.toLowerCase();
-          const isHeading = tagName.startsWith('h');
-          const isQuote = tagName === 'blockquote';
-          
-          if (isHeading) {
-            validParagraphs.push(`<${tagName} class="chapter-heading text-xl font-bold tracking-tight my-4">${cleanXmlText(text)}</${tagName}>`);
-          } else if (isQuote) {
-            validParagraphs.push(`<blockquote class="border-l-2 pl-4 italic my-3 opacity-90">${cleanXmlText(text)}</blockquote>`);
-          } else {
-            validParagraphs.push(`<p class="leading-relaxed my-3">${cleanXmlText(text)}</p>`);
-          }
-          plainParagraphs.push(cleanXmlText(text));
-        }
+    const sanitizeTable = (table: HTMLTableElement): string => {
+      const clone = table.cloneNode(true) as HTMLTableElement;
+      clone.removeAttribute('style');
+      clone.removeAttribute('width');
+      clone.removeAttribute('border');
+      clone.removeAttribute('cellspacing');
+      clone.removeAttribute('cellpadding');
+      clone.removeAttribute('bgcolor');
+
+      clone.querySelectorAll('*').forEach((cell) => {
+        cell.removeAttribute('style');
+        cell.removeAttribute('width');
+        cell.removeAttribute('bgcolor');
+        cell.removeAttribute('color');
+        cell.removeAttribute('face');
       });
-    } else {
-      // Fallback: Split body text by double newlines
+
+      return clone.innerHTML;
+    };
+
+    const walk = (node: Node) => {
+      if (node.nodeType === Node.COMMENT_NODE) return;
+
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = cleanXmlText(node.textContent || '');
+        if (text.length > 3) {
+          structuredBlocks.push(`<p data-p-idx="${pIdx}" class="leading-relaxed my-3">${text}</p>`);
+          plainParagraphs.push(text);
+          pIdx++;
+        }
+        return;
+      }
+
+      if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+      const el = node as HTMLElement;
+      const tagName = el.tagName.toLowerCase();
+
+      // 1. Table
+      if (tagName === 'table') {
+        const cleanTable = sanitizeTable(el as HTMLTableElement);
+        structuredBlocks.push(
+          `<div class="audbook-table-wrapper overflow-x-auto my-6 rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)]/30 p-2"><table class="audbook-table w-full text-left text-sm border-collapse">${cleanTable}</table></div>`
+        );
+        return;
+      }
+
+      // 2. Figure
+      if (tagName === 'figure') {
+        const img = el.querySelector('img, image');
+        const src = img?.getAttribute('src') || img?.getAttribute('href') || img?.getAttribute('xlink:href');
+        const alt = img?.getAttribute('alt') || '';
+        const caption = el.querySelector('figcaption')?.textContent?.trim() || '';
+        if (src) {
+          structuredBlocks.push(
+            `<figure class="audbook-figure my-8 flex flex-col items-center justify-center text-center"><img src="${src}" alt="${cleanXmlText(alt)}" class="audbook-image max-h-[72vh] max-w-full rounded-xl border border-[var(--border-hairline)] object-contain shadow-md cursor-zoom-in" loading="lazy" />${caption ? `<figcaption class="audbook-caption mt-2.5 text-xs text-[var(--text-muted)] italic font-sans">${cleanXmlText(caption)}</figcaption>` : ''}</figure>`
+          );
+        }
+        return;
+      }
+
+      // 3. Standalone Image
+      if (tagName === 'img' || tagName === 'image') {
+        const src = el.getAttribute('src') || el.getAttribute('href') || el.getAttribute('xlink:href');
+        const alt = el.getAttribute('alt') || el.getAttribute('title') || '';
+        if (src) {
+          structuredBlocks.push(
+            `<figure class="audbook-figure my-8 flex flex-col items-center justify-center text-center"><img src="${src}" alt="${cleanXmlText(alt)}" class="audbook-image max-h-[72vh] max-w-full rounded-xl border border-[var(--border-hairline)] object-contain shadow-md cursor-zoom-in" loading="lazy" />${alt ? `<figcaption class="audbook-caption mt-2.5 text-xs text-[var(--text-muted)] italic font-sans">${cleanXmlText(alt)}</figcaption>` : ''}</figure>`
+          );
+        }
+        return;
+      }
+
+      // 4. Horizontal Rule / Divider
+      if (tagName === 'hr') {
+        structuredBlocks.push(`<hr class="audbook-divider my-8 border-t border-[var(--border-hairline)] opacity-60" />`);
+        return;
+      }
+
+      // 5. Preformatted Code
+      if (tagName === 'pre') {
+        const codeText = el.textContent || '';
+        if (codeText.trim().length > 0) {
+          structuredBlocks.push(
+            `<pre class="audbook-pre my-4 overflow-x-auto rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-elevated)] p-4 font-mono text-xs text-[var(--text-ink)] leading-relaxed"><code>${cleanXmlText(codeText)}</code></pre>`
+          );
+        }
+        return;
+      }
+
+      // 6. Semantic text elements: Headings, Quotes, Paragraphs, List items
+      const isHeading = tagName.startsWith('h') && tagName.length === 2;
+      const isQuote = tagName === 'blockquote';
+      const isParagraph = tagName === 'p' || tagName === 'li';
+
+      if (isHeading || isQuote || isParagraph) {
+        // Check for nested images inside this block
+        const nestedImages = Array.from(el.querySelectorAll('img, image'));
+        for (const img of nestedImages) {
+          const src = img.getAttribute('src') || img.getAttribute('href') || img.getAttribute('xlink:href');
+          const alt = img.getAttribute('alt') || '';
+          if (src) {
+            structuredBlocks.push(
+              `<figure class="audbook-figure my-8 flex flex-col items-center justify-center text-center"><img src="${src}" alt="${cleanXmlText(alt)}" class="audbook-image max-h-[72vh] max-w-full rounded-xl border border-[var(--border-hairline)] object-contain shadow-md cursor-zoom-in" loading="lazy" />${alt ? `<figcaption class="audbook-caption mt-2.5 text-xs text-[var(--text-muted)] italic font-sans">${cleanXmlText(alt)}</figcaption>` : ''}</figure>`
+            );
+          }
+        }
+
+        // Check for nested tables inside this block
+        const nestedTables = Array.from(el.querySelectorAll('table'));
+        for (const tbl of nestedTables) {
+          structuredBlocks.push(
+            `<div class="audbook-table-wrapper overflow-x-auto my-6 rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)]/30 p-2"><table class="audbook-table w-full text-left text-sm border-collapse">${sanitizeTable(tbl as HTMLTableElement)}</table></div>`
+          );
+        }
+
+        const text = cleanXmlText(el.textContent || '');
+        if (text.length > 2) {
+          const currentPIdx = pIdx++;
+          if (isHeading) {
+            structuredBlocks.push(`<${tagName} data-p-idx="${currentPIdx}" class="chapter-heading text-xl font-bold tracking-tight my-4">${text}</${tagName}>`);
+          } else if (isQuote) {
+            structuredBlocks.push(`<blockquote data-p-idx="${currentPIdx}" class="border-l-2 pl-4 italic my-3 opacity-90">${text}</blockquote>`);
+          } else if (tagName === 'li') {
+            structuredBlocks.push(`<li data-p-idx="${currentPIdx}" class="leading-relaxed my-1.5 list-disc ml-5">${text}</li>`);
+          } else {
+            structuredBlocks.push(`<p data-p-idx="${currentPIdx}" class="leading-relaxed my-3">${text}</p>`);
+          }
+          plainParagraphs.push(text);
+        }
+        return;
+      }
+
+      // 7. General Container (div, section, article, main, aside, ul, ol, etc.)
+      if (el.children.length > 0) {
+        Array.from(el.childNodes).forEach(walk);
+      } else {
+        const text = cleanXmlText(el.textContent || '');
+        if (text.length > 2) {
+          const currentPIdx = pIdx++;
+          structuredBlocks.push(`<p data-p-idx="${currentPIdx}" class="leading-relaxed my-3">${text}</p>`);
+          plainParagraphs.push(text);
+        }
+      }
+    };
+
+    Array.from(body.childNodes).forEach(walk);
+
+    // Fallback if no structured blocks found: split body raw text
+    if (structuredBlocks.length === 0) {
       const rawText = body.textContent || '';
       const parts = rawText.split(/\n\s*\n/).map((s) => s.trim()).filter((s) => s.length > 5);
       parts.forEach((p) => {
-        validParagraphs.push(`<p class="leading-relaxed my-3">${cleanXmlText(p)}</p>`);
+        const currentPIdx = pIdx++;
+        structuredBlocks.push(`<p data-p-idx="${currentPIdx}" class="leading-relaxed my-3">${cleanXmlText(p)}</p>`);
         plainParagraphs.push(cleanXmlText(p));
       });
     }
@@ -266,24 +431,20 @@ export async function parseEpubFile(file: File | Blob): Promise<ParsedBookResult
     const chapterPlain = plainParagraphs.join('\n\n');
     const words = chapterPlain.split(/\s+/).filter(Boolean);
     const wordCount = words.length;
+    const hasMedia = structuredBlocks.some(
+      (b) => b.includes('audbook-figure') || b.includes('audbook-table')
+    );
 
-    // Filter out empty or negligible utility pages (e.g. 0-10 words with no title)
-    if (wordCount < 15 && !titleCandidate) {
+    // Filter out empty or negligible utility pages (unless they contain illustrations/tables)
+    if (wordCount < 10 && !titleCandidate && !hasMedia) {
       continue;
     }
 
     totalWordCount += wordCount;
 
-    // Format content with explicit data-p-idx attributes for sentence & word tracking
-    const structuredContent = validParagraphs
-      .map((p, idx) => {
-        return p.replace(/<([a-z0-9]+)/, `<$1 data-p-idx="${idx}"`);
-      })
-      .join('\n');
-
     chapters.push({
       title: titleCandidate || `Chapter ${chapterIndex + 1}`,
-      content: structuredContent,
+      content: structuredBlocks.join('\n'),
       rawText: chapterPlain,
       order: chapterIndex,
       wordCount,

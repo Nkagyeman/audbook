@@ -49,6 +49,10 @@ Either the well was very deep, or she fell very slowly, for she had plenty of ti
         content: `<p data-p-idx="0" class="leading-relaxed my-3">Alice was beginning to get very tired of sitting by her sister on the bank, and of having nothing to do: once or twice she had peeped into the book her sister was reading, but it had no pictures or conversations in it, "and what is the use of a book," thought Alice "without pictures or conversations?"</p>
 <p data-p-idx="1" class="leading-relaxed my-3">So she was considering in her own mind (as well as she could, for the hot day made her feel very sleepy and stupid), whether the pleasure of making a daisy-chain would be worth the trouble of getting up and picking the daisies, when suddenly a White Rabbit with pink eyes ran close by her.</p>
 <p data-p-idx="2" class="leading-relaxed my-3">There was nothing so very remarkable in that; nor did Alice think it so very much out of the way to hear the Rabbit say to itself, "Oh dear! Oh dear! I shall be late!" (when she thought it over afterwards, it occurred to her that she ought to have wondered at this, but at the time it all seemed quite natural); but when the Rabbit actually took a watch out of its waistcoat-pocket, and looked at it, and then hurried on, Alice started to her feet, for it flashed across her mind that she had never before seen a rabbit with either a waistcoat-pocket, or a watch to take out of it, and burning with curiosity, she ran across the field after it, and fortunately was just in time to see it pop down a large rabbit-hole under the hedge.</p>
+<figure class="audbook-figure my-8 flex flex-col items-center justify-center text-center">
+  <img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='440' height='260' viewBox='0 0 440 260'><rect width='100%' height='100%' rx='16' fill='%230F172A'/><rect x='12' y='12' width='416' height='236' rx='12' fill='none' stroke='%2338BDF8' stroke-width='1.5' stroke-opacity='0.3'/><circle cx='180' cy='120' r='60' fill='%231E293B' stroke='%2338BDF8' stroke-width='2'/><path d='M150 100 L210 100 L180 150 Z' fill='%2338BDF8' opacity='0.8'/><circle cx='280' cy='150' r='32' fill='%23FEF08A' stroke='%23F59E0B' stroke-width='3'/><circle cx='280' cy='150' r='26' fill='%23FFFBEB'/><line x1='280' y1='150' x2='280' y2='132' stroke='%23B45309' stroke-width='2.5' stroke-linecap='round'/><line x1='280' y1='150' x2='294' y2='150' stroke='%23B45309' stroke-width='2.5' stroke-linecap='round'/><circle cx='280' cy='114' r='4' fill='none' stroke='%23F59E0B' stroke-width='2'/><text x='220' y='210' fill='%23F8FAFC' font-family='Georgia, serif' font-size='15' font-weight='bold' text-anchor='middle'>The White Rabbit Checking His Watch</text><text x='220' y='230' fill='%2394A3B8' font-family='sans-serif' font-size='11' letter-spacing='1' text-anchor='middle'>ORIGINAL ILLUSTRATION STUDY</text></svg>" alt="The White Rabbit consulting his pocket watch" class="audbook-image max-h-[72vh] max-w-full rounded-xl border border-[var(--border-hairline)] object-contain shadow-md cursor-zoom-in" loading="lazy" />
+  <figcaption class="audbook-caption mt-2.5 text-xs text-[var(--text-muted)] italic font-sans">Figure 1.1: The White Rabbit consulting his waistcoat pocket-watch beside the hedge.</figcaption>
+</figure>
 <p data-p-idx="3" class="leading-relaxed my-3">In another moment down went Alice after it, never once considering how in the world she was to get out again.</p>
 <p data-p-idx="4" class="leading-relaxed my-3">The rabbit-hole went straight on like a tunnel for some way, and then dipped suddenly down, so suddenly that Alice had not a moment to think about stopping herself before she found herself falling down a very deep well.</p>
 <p data-p-idx="5" class="leading-relaxed my-3">Either the well was very deep, or she fell very slowly, for she had plenty of time as she went down to look about her and to wonder what was going to happen next. First, she tried to look down and make out what she was coming to, but it was too dark to see anything; then she looked at the sides of the well, and noticed that they were filled with cupboards and book-shelves; here and there she saw maps and pictures hung upon pegs. She took down a jar from one of the shelves as she passed; it was labelled "ORANGE MARMALADE", but to her great disappointment it was empty: she did not like to drop the jar for fear of killing somebody underneath, so managed to put it into one of the cupboards as she fell past it.</p>`,
@@ -175,6 +179,38 @@ He didn't say any more, but we've always been unusually communicative in a reser
 And, after boasting this way of my tolerance, I come to the admission that it has a limit. Conduct may be founded on the hard rock or the wet marshes, but after a certain point I don't care what it's founded on. When I came back from the East last autumn I felt that I wanted the world to be in uniform and at a sort of moral attention forever; I wanted no more riotous excursions with privileged glimpses into the human heart. Only Gatsby, the man who gives his name to this book, was exempt from my reaction—Gatsby, who represented everything for which I have an unaffected scorn.`,
         content: `<p data-p-idx="0" class="leading-relaxed my-3">In my younger and more vulnerable years my father gave me some advice that I've been turning over in my mind ever since.</p>
 <p data-p-idx="1" class="leading-relaxed my-3">"Whenever you feel like criticizing any one," he told me, "just remember that all the people in this world haven't had the advantages that you've had."</p>
+<div class="audbook-table-wrapper my-6 overflow-x-auto rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)]/30 p-2">
+  <table class="audbook-table w-full text-left text-sm border-collapse">
+    <thead>
+      <tr>
+        <th class="border-b border-[var(--border-hairline)] bg-[var(--bg-elevated)] px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider">Party Schedule</th>
+        <th class="border-b border-[var(--border-hairline)] bg-[var(--bg-elevated)] px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider">Arrival Time</th>
+        <th class="border-b border-[var(--border-hairline)] bg-[var(--bg-elevated)] px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider">Music &amp; Entertainment</th>
+        <th class="border-b border-[var(--border-hairline)] bg-[var(--bg-elevated)] px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider">Guest Count</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="border-b border-[var(--border-hairline)]/50 px-4 py-2.5 text-xs font-medium">Friday Gala</td>
+        <td class="border-b border-[var(--border-hairline)]/50 px-4 py-2.5 text-xs">7:00 PM</td>
+        <td class="border-b border-[var(--border-hairline)]/50 px-4 py-2.5 text-xs">Full 40-Piece Brass Orchestra</td>
+        <td class="border-b border-[var(--border-hairline)]/50 px-4 py-2.5 text-xs tnum">350+</td>
+      </tr>
+      <tr>
+        <td class="border-b border-[var(--border-hairline)]/50 px-4 py-2.5 text-xs font-medium">Saturday Soirée</td>
+        <td class="border-b border-[var(--border-hairline)]/50 px-4 py-2.5 text-xs">8:30 PM</td>
+        <td class="border-b border-[var(--border-hairline)]/50 px-4 py-2.5 text-xs">Jazz Ensemble &amp; Choral Singers</td>
+        <td class="border-b border-[var(--border-hairline)]/50 px-4 py-2.5 text-xs tnum">500+</td>
+      </tr>
+      <tr>
+        <td class="px-4 py-2.5 text-xs font-medium">Sunday Matinée</td>
+        <td class="px-4 py-2.5 text-xs">2:00 PM</td>
+        <td class="px-4 py-2.5 text-xs">Hydroplane Excursions &amp; Strings</td>
+        <td class="px-4 py-2.5 text-xs tnum">120</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
 <p data-p-idx="2" class="leading-relaxed my-3">He didn't say any more, but we've always been unusually communicative in a reserved way, and I understood that he meant a great deal more than that. In consequence, I'm inclined to reserve all judgements, a habit that has opened up many curious natures to me and also made me the victim of not a few veteran bores. The abnormal mind is quick to detect and attach itself to this quality when it appears in a normal person, and so it came about that in college I was unjustly accused of being a politician, because I was privy to the secret griefs of wild, unknown men.</p>
 <p data-p-idx="3" class="leading-relaxed my-3">And, after boasting this way of my tolerance, I come to the admission that it has a limit. Conduct may be founded on the hard rock or the wet marshes, but after a certain point I don't care what it's founded on. When I came back from the East last autumn I felt that I wanted the world to be in uniform and at a sort of moral attention forever; I wanted no more riotous excursions with privileged glimpses into the human heart. Only Gatsby, the man who gives his name to this book, was exempt from my reaction—Gatsby, who represented everything for which I have an unaffected scorn.</p>`,
       },

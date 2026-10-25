@@ -166,3 +166,105 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
 }
+
+/* Rich Media Elements (Images, Figures, Tables, Dividers, Code) */
+.audbook-figure {
+  margin: 2.25rem 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.audbook-image {
+  max-height: 72vh;
+  max-width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border-hairline);
+  box-shadow: var(--card-shadow);
+  object-fit: contain;
+  background-color: var(--bg-surface);
+  cursor: zoom-in;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
+}
+
+.audbook-image:hover {
+  transform: scale(1.01);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15);
+}
+
+.audbook-caption {
+  margin-top: 0.65rem;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+  font-style: italic;
+  font-family: var(--font-inter, sans-serif);
+  max-width: 80ch;
+}
+
+.audbook-table-wrapper {
+  margin: 2rem 0;
+  width: 100%;
+  overflow-x: auto;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border-hairline);
+  background-color: var(--bg-surface);
+  box-shadow: var(--card-shadow);
+}
+
+.audbook-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.audbook-table th {
+  background-color: var(--bg-elevated);
+  color: var(--text-ink);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-hairline);
+  white-space: nowrap;
+}
+
+.audbook-table td {
+  padding: 0.75rem 1rem;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.audbook-table tr:last-child td {
+  border-bottom: none;
+}
+
+.audbook-table tr:hover td {
+  background-color: var(--bg-elevated);
+}
+
+.audbook-divider {
+  margin: 2.5rem auto;
+  border: none;
+  border-top: 1px solid var(--border-hairline);
+  width: 60%;
+  opacity: 0.6;
+}
+
+.audbook-pre {
+  margin: 1.5rem 0;
+  padding: 1rem 1.25rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border-hairline);
+  background-color: var(--bg-elevated);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.825rem;
+  line-height: 1.6;
+  overflow-x: auto;
+  color: var(--text-ink);
+}
