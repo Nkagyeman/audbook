@@ -566,7 +566,9 @@ type ContentBlock =
                 )}
               </p>
             );
-          })
+          }
+          return null;
+        })
         ) : chapterTokens && chapterTokens.paragraphs.length > 0 ? (
           chapterTokens.paragraphs.map((para) => {
             const pIdx = para.paragraphIndex;
@@ -654,9 +656,7 @@ type ContentBlock =
                 })}
               </p>
             );
-          }
-          return null;
-        })
+          })
         ) : (
           currentChapter.rawText
             .split(/\n\s*\n/)
