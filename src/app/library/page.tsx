@@ -8,8 +8,11 @@ import { seedSampleBooksIfEmpty, restoreSampleBooks, getDeletedBookIds, markBook
 import BookCard from '@/components/BookCard';
 import UploaderModal from '@/components/UploaderModal';
 import SettingsModal from '@/components/SettingsModal';
+import AuthModal from '@/components/AuthModal';
+import { fetchAllProgressFromCloud } from '@/lib/supabase';
 import {
   BookOpen,
+  Cloud,
   Plus,
   Search,
   LayoutGrid,
@@ -32,6 +35,7 @@ export default function LibraryPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [isUploaderOpen, setIsUploaderOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   const { loadBook, playAudio } = useReader();
@@ -43,13 +47,30 @@ export default function LibraryPage() {
     const all = await db.books.orderBy('lastReadAt').reverse().toArray();
     const nonDeleted = all.filter((b) => !deletedIds.includes(b.id));
 
+    // Merge recent progress from Cloud and localStorage
+    let cloudMap: any = {};
+    try {
+      cloudMap = await fetchAllProgressFromCloud();
+    } catch (e) {}
+
     // Merge recent progress from localStorage
     const merged = nonDeleted.map((b) => {
       try {
         const localProgRaw = localStorage.getItem(`audbook_prog_${b.id}`);
         if (localProgRaw) {
           const lp = JSON.parse(localProgRaw);
-          if (!b.lastReadAt || lp.lastReadAt >= b.lastReadAt) {
+          const cp = cloudMap[b.id];
+        if (cp && (!b.lastReadAt || cp.last_read_at > (lp.lastReadAt || b.lastReadAt))) {
+          return {
+            ...b,
+            currentChapterIndex: cp.current_chapter_index,
+            currentParagraphIndex: cp.current_paragraph_index,
+            currentWordIndex: cp.current_word_index,
+            readingProgress: cp.reading_progress,
+            lastReadAt: cp.last_read_at,
+          };
+        }
+        if (!b.lastReadAt || lp.lastReadAt >= b.lastReadAt) {
             return {
               ...b,
               currentChapterIndex: lp.currentChapterIndex ?? b.currentChapterIndex,
@@ -174,6 +195,15 @@ ${bookmarks.map((bm, i) => `- **${bm.chapterTitle}**: "${bm.snippet}"`).join('\n
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsAuthOpen(true)}
+              className="flex items-center gap-1.5 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-surface)] px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-ink)] transition-colors"
+            >
+              <Cloud className="h-3.5 w-3.5 text-blue-500" />
+              <span>Cross-Device Sync</span>
+            </button>
+
             <button
               type="button"
               onClick={() => setIsSettingsOpen(true)}
@@ -465,6 +495,12 @@ ${bookmarks.map((bm, i) => `- **${bm.chapterTitle}**: "${bm.snippet}"`).join('\n
       />
 
       {/* Settings Modal */}
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
+        onSyncComplete={loadAllBooks}
+      />
+
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}

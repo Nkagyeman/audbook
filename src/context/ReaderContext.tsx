@@ -5,6 +5,7 @@ import { Book, Chapter, Bookmark, Highlight, UserSettings, ReaderTheme, ReaderFo
 import { db, DEFAULT_SETTINGS, getStoredSettings, saveStoredSettings } from '@/lib/db';
 import { tokenizeChapterText, findTokenByCharIndex, ChapterTokens, ParsedWordToken, ParsedSentenceToken } from '@/lib/audio/tokenAligner';
 import { BrowserSpeechController, SpeechVoiceInfo } from '@/lib/audio/speechSynthesizer';
+import { pushProgressToCloud, fetchProgressFromCloud, supabase, isSupabaseConfigured } from '@/lib/supabase';
 
 interface ReaderContextValue {
   // Active Book & Chapters
@@ -84,6 +85,7 @@ export function ReaderProvider({ children }: { children: React.ReactNode }) {
   const speechControllerRef = useRef<BrowserSpeechController | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const lastCharIndexRef = useRef<number>(0);
+  const cloudSyncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Up-to-date refs to eliminate stale closure bugs during asynchronous events
   const currentChapterIndexRef = useRef<number>(0);
@@ -275,6 +277,16 @@ export function ReaderProvider({ children }: { children: React.ReactNode }) {
       try {
         db.books.update(book.id, payload);
       } catch (e) {}
+
+      pushProgressToCloud({
+        book_id: book.id,
+        current_chapter_index: chIdx,
+        current_paragraph_index: pIdx,
+        current_word_index: wIdx,
+        current_audio_timestamp: charOffset,
+        reading_progress: progressPercent,
+        last_read_at: payload.lastReadAt,
+      });
     };
 
     const handleVisibilityChange = () => {
@@ -331,6 +343,32 @@ export function ReaderProvider({ children }: { children: React.ReactNode }) {
       } catch (e) {}
 
       const bookChapters = await db.chapters.where('bookId').equals(bookId).sortBy('order');
+      
+      // Check if Supabase has newer progress from phone/laptop
+      try {
+        const cloudProg = await fetchProgressFromCloud(bookId);
+        if (cloudProg && (!book.lastReadAt || cloudProg.last_read_at > book.lastReadAt)) {
+          book.currentChapterIndex = cloudProg.current_chapter_index ?? book.currentChapterIndex;
+          book.currentParagraphIndex = cloudProg.current_paragraph_index ?? book.currentParagraphIndex;
+          book.currentWordIndex = cloudProg.current_word_index ?? book.currentWordIndex;
+          book.readingProgress = cloudProg.reading_progress ?? book.readingProgress;
+          book.lastReadAt = cloudProg.last_read_at ?? book.lastReadAt;
+
+          try {
+            localStorage.setItem("audbook_prog_" + bookId, JSON.stringify(cloudProg));
+            await db.books.update(bookId, {
+              currentChapterIndex: book.currentChapterIndex,
+              currentParagraphIndex: book.currentParagraphIndex,
+              currentWordIndex: book.currentWordIndex,
+              readingProgress: book.readingProgress,
+              lastReadAt: book.lastReadAt,
+            });
+          } catch (e) {}
+        }
+      } catch (e) {
+        console.warn("Could not fetch cloud progress:", e);
+      }
+
       if (bookChapters.length === 0) return false;
 
       setActiveBook(book);

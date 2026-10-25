@@ -1,6 +1,7 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
+import AuthModal from '@/components/AuthModal';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useReader } from '@/context/ReaderContext';
@@ -12,6 +13,7 @@ import {
   Minimize2,
   Maximize2,
   Volume2,
+  Cloud,
   Sparkles,
 } from 'lucide-react';
 
@@ -29,6 +31,7 @@ export default function ReaderHeader({
   onToggleFocusMode,
 }: ReaderHeaderProps) {
   const router = useRouter();
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
   const { activeBook, currentChapter, currentChapterIndex, chapters, isPlaying, togglePlayPause } = useReader();
 
   if (!activeBook) return null;
@@ -103,6 +106,16 @@ export default function ReaderHeader({
             <Bookmark className="h-4 w-4" />
           </button>
 
+          {/* Cloud Sync */}
+          <button
+            type="button"
+            onClick={() => setIsAuthOpen(true)}
+            className="rounded-lg p-1.5 text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-blue-500 transition-colors"
+            title="Cross-Device Cloud Sync"
+          >
+            <Cloud className="h-4 w-4" />
+          </button>
+
           {/* Appearance & Settings */}
           <button
             type="button"
@@ -136,6 +149,7 @@ export default function ReaderHeader({
           </button>
         </div>
       </div>
+      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
     </header>
   );
 }
