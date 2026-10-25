@@ -24,24 +24,38 @@ create index if not exists idx_user_book_progress_user on public.user_book_progr
 alter table public.user_book_progress enable row level security;
 
 -- 4. RLS Policies: users can only view, insert, update, or delete their own progress
+drop policy if exists "Users can view own book progress" on public.user_book_progress;
 create policy "Users can view own book progress"
   on public.user_book_progress for select
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can insert own book progress" on public.user_book_progress;
 create policy "Users can insert own book progress"
   on public.user_book_progress for insert
   with check (auth.uid() = user_id);
 
+drop policy if exists "Users can update own book progress" on public.user_book_progress;
 create policy "Users can update own book progress"
   on public.user_book_progress for update
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can delete own book progress" on public.user_book_progress;
 create policy "Users can delete own book progress"
   on public.user_book_progress for delete
   using (auth.uid() = user_id);
 
 -- 5. Enable Realtime updates (so progress syncs instantly between open phone & laptop)
-alter publication supabase_realtime add table public.user_book_progress;
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables 
+    where pubname = 'supabase_realtime' 
+      and schemaname = 'public' 
+      and tablename = 'user_book_progress'
+  ) then
+    alter publication supabase_realtime add table public.user_book_progress;
+  end if;
+end $$;
 
 -- (Optional) 6. User Bookmarks Table for cross-device bookmark sync
 create table if not exists public.user_bookmarks (
@@ -58,6 +72,7 @@ create table if not exists public.user_bookmarks (
 
 alter table public.user_bookmarks enable row level security;
 
+drop policy if exists "Users can manage own bookmarks" on public.user_bookmarks;
 create policy "Users can manage own bookmarks"
   on public.user_bookmarks for all
   using (auth.uid() = user_id);
